@@ -1,0 +1,46 @@
+base_model: ${ENV.BASE_MODEL}        # 由环境变量注入，如 qwen2.5-7b-instruct / llama-3.1-8b-instruct 等
+tokenizer: ${ENV.TOKENIZER:-auto}
+
+# 数据
+datasets:
+  hotpotqa: 0.40
+  strategyqa: 0.30
+  gsm8k: 0.30
+rollout_len: 128
+max_turns: 6
+train_samples: 8_000                 # RL 探索样本池（从模板生成带工具/澄清轨迹）
+eval_shadow_n: 245                  # 与 shadow_run 对齐的稳态集
+
+# 优化
+steps: 5_000
+batch_size: 32
+mini_batch_size: 4
+lr: 1.0e-5
+ppo_clip: 0.2
+gae_lambda: 0.95
+gamma: 0.99
+vf_coef: 0.5
+
+# KL 与稳定性
+init_kl_coef: 0.02
+target_kl: 0.03
+kl_adaptation: true                  # 超过 target_kl 动态↑coef
+
+# 奖励聚合
+weights_file: "configs/weights.json" # Phase 2.2 产物
+use_overclar_penalty: true           # Phase 2.3 已实现
+overclar:
+  alpha: 0.07
+  cap: 3
+
+# 并发与缓存
+scorer_provider: deepseek_r1         # 与 Phase 2 一致；可切 gemini
+k_vote: 3
+cache_ttl_days: 14
+max_concurrent: 5
+
+# 日志与复现
+seed: 20250820
+wandb: false
+save_every_steps: 500
+eval_every_steps: 500
