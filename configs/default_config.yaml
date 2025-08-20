@@ -92,6 +92,28 @@ evaluation:
     - "average_turns"
     - "safety_score"
 
+# Phase 2配置 - GPT指导新增
+shadow_gate: 
+  spearman_min: 0.75
+  top10_overlap_min: 0.70
+  corr_improve_pct: 10
+
+calibration:
+  l2_reg: 0.1
+  cv_folds: 5
+  bootstraps: 200
+  random_seed: 42
+
+overclar:
+  alpha: 0.07
+  cap: 3
+  enforce_when_needs_clarification_false: true
+
+eval_sample:
+  n: 245
+  stratify: ["math", "multihop", "clarify"]
+  seed: 20250820
+
 # 日志配置
 logging:
   project_name: "llm_human_collaboration"
