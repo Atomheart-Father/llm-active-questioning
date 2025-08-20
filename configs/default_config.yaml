@@ -1,0 +1,100 @@
+# 默认配置文件
+# 模型配置
+model:
+  name: "Qwen/Qwen3-4B-Thinking-2507"  # 基础模型 - 专门优化思考和推理能力
+  max_length: 2048
+  device: "auto"
+  load_in_8bit: false
+  load_in_4bit: false
+
+# 数据配置
+data:
+  # 数据集混合比例
+  dataset_weights:
+    ambigqa: 0.25
+    gsm8k: 0.25 
+    hotpotqa: 0.25
+    lima: 0.08
+    react: 0.08
+    toolbench: 0.04
+    guanaco_cot: 0.05
+  
+  # 数据路径
+  data_dir: "./data"
+  train_split: 0.9
+  val_split: 0.1
+  max_samples_per_dataset: 10000  # 控制数据规模，便于实验
+
+# GPT-4模拟配置
+simulation:
+  openai_api_key: ""  # 需要填入实际API Key
+  model: "gpt-4"
+  temperature: 0.7
+  max_tokens: 1024
+  # 用户风格分布
+  style_distribution:
+    simple_realistic: 0.8  # 简洁真实风格占80%
+    complex_professional: 0.1  # 复杂专业风格
+    role_playing: 0.05  # 角色扮演
+    format_specific: 0.05  # 特定格式要求
+
+# PPO训练配置
+training:
+  batch_size: 8
+  mini_batch_size: 2
+  gradient_accumulation_steps: 4
+  learning_rate: 1.41e-5
+  num_epochs: 3
+  max_grad_norm: 1.0
+  
+  # PPO特定参数
+  ppo_epochs: 4
+  clip_range: 0.2
+  kl_coef: 0.02
+  vf_coef: 0.1
+  target_kl: 0.01
+  
+  # 奖励权重
+  reward_weights:
+    correctness: 0.6
+    gpt4_preference: 0.3
+    safety_penalty: 0.1
+
+# 奖励计算配置
+reward:
+  gpt4_evaluation:
+    enabled: true
+    batch_size: 10  # 批量评估以降低API调用成本
+    cache_results: true
+  
+  correctness_metrics:
+    - "exact_match"
+    - "f1_score" 
+    - "bleu"
+  
+  safety_keywords:
+    - "harmful"
+    - "offensive"
+    - "illegal"
+
+# 评估配置
+evaluation:
+  eval_every_n_steps: 100
+  save_every_n_steps: 500
+  eval_datasets:
+    - "ambigqa_test"
+    - "gsm8k_test"  
+    - "hotpotqa_test"
+  
+  metrics:
+    - "task_success_rate"
+    - "human_intervention_rate"
+    - "average_turns"
+    - "safety_score"
+
+# 日志配置
+logging:
+  project_name: "llm_human_collaboration"
+  experiment_name: "ppo_multimodal_agent"
+  log_dir: "./logs"
+  use_wandb: false  # 初始设为false，后续可开启
