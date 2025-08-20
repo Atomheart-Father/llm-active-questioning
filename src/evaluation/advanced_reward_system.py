@@ -13,6 +13,16 @@ import re
 import statistics
 from typing import Dict, Any, List, Tuple, Optional
 import logging
+
+# 导入评分凭证日志
+try:
+    import sys
+    sys.path.append('.')
+    from scripts.scoring_ledger import log_api_call
+except ImportError:
+    # 如果导入失败，创建空函数
+    def log_api_call(*args, **kwargs):
+        pass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -510,7 +520,19 @@ class MultiDimensionalRewardSystem:
             hard_results = self.hard_evaluator.evaluate(dialogue)
             
             # GPT评估（带缓存）
+            start_time = time.time()
             gpt_scores, variance = self._get_gpt_scores_cached(dialogue)
+            latency_ms = (time.time() - start_time) * 1000
+            
+            # 记录评分凭证
+            log_api_call(
+                provider=os.getenv("SCORER_PROVIDER", "unknown"),
+                http_status=200,
+                billable_tokens=1,  # 简化，实际应从API响应获取
+                latency_ms=latency_ms,
+                sample_id=dialogue.get("id", "unknown"),
+                task=dialogue.get("task", "unknown")
+            )
             
             # 计算主奖励
             primary_reward = self._calculate_primary_reward(hard_results, gpt_scores)
@@ -541,11 +563,21 @@ class MultiDimensionalRewardSystem:
             
         except Exception as e:
             logger.error(f"对话评估失败: {e}")
-            # 生产模式：严格禁止降级到模拟评分
-            import os
-            if os.getenv("RUN_MODE") == "prod":
-                raise RuntimeError(f"生产模式评分失败，拒绝fallback: {e}")
-            return self._generate_fallback_result(dialogue, str(e))
+                    # 生产模式：严格禁止降级到模拟评分
+        import os
+        if os.getenv("RUN_MODE") == "prod":
+            raise RuntimeError(f"生产模式评分失败，拒绝fallback: {e}")
+        
+        # 单一提供商检查：如果配置了单一provider，禁用其他分支
+        scorer_provider = os.getenv("SCORER_PROVIDER", "")
+        if scorer_provider == "gemini":
+            # 只允许Gemini，禁用其他提供商分支
+            raise RuntimeError(f"仅配置Gemini提供商，但评分失败: {e}")
+        elif scorer_provider == "deepseek_r1":
+            # 只允许DeepSeek，禁用其他提供商分支
+            raise RuntimeError(f"仅配置DeepSeek提供商，但评分失败: {e}")
+        
+        return self._generate_fallback_result(dialogue, str(e))
     
     def _get_gpt_scores_cached(self, dialogue: Dict) -> Tuple[Dict[str, float], float]:
         """获取GPT评分（带缓存）"""

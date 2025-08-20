@@ -37,7 +37,7 @@ overclar:
 scorer_provider: deepseek_r1         # 与 Phase 2 一致；可切 gemini
 k_vote: 3
 cache_ttl_days: 14
-max_concurrent: 5
+max_concurrent: 2  # Colab降低并发避免速率限制
 
 # 日志与复现
 seed: 20250820

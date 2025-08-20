@@ -63,7 +63,14 @@ def check_round2_requirements():
             overlap_metrics = shadow_data.get("overlap_metrics", {})
             top10_overlap = overlap_metrics.get("top10_overlap", 0)
             
+            # 预跑门槛检查（比正式RC1验收门槛低）
             shadow_passed = spearman >= 0.55 and top10_overlap >= 0.60
+            
+            if not shadow_passed:
+                print(f"❌ 影子指标未达预跑门槛:")
+                print(f"   Spearman: {spearman:.3f} (需要≥0.55)")
+                print(f"   Top10重合: {top10_overlap:.3f} (需要≥0.60)")
+                print(f"   建议检查奖励聚合或成功标签口径")
             
             checks["shadow_metrics"] = {
                 "passed": shadow_passed,
