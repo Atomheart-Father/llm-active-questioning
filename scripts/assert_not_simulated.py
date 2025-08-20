@@ -224,6 +224,23 @@ def main():
     assert run_mode == "prod", f"❌ RUN_MODE={run_mode}，必须为'prod'"
     print(f"✅ 运行模式: {run_mode}")
     
+    # 检查提供商与密钥一致性
+    scorer_provider = os.getenv("SCORER_PROVIDER", "")
+    providers = [p.strip() for p in scorer_provider.split(",") if p.strip()]
+    
+    for provider in providers:
+        if provider == "gemini" and not os.getenv("GEMINI_API_KEY"):
+            print("❌ SCORER_PROVIDER包含gemini但缺少GEMINI_API_KEY")
+            return 1
+        elif provider == "deepseek_r1" and not os.getenv("DEEPSEEK_API_KEY"):
+            print("❌ SCORER_PROVIDER包含deepseek_r1但缺少DEEPSEEK_API_KEY")
+            return 1
+        elif provider == "gpt35" and not os.getenv("OPENAI_API_KEY"):
+            print("❌ SCORER_PROVIDER包含gpt35但缺少OPENAI_API_KEY")
+            return 1
+    
+    print(f"✅ 提供商配置验证通过: {scorer_provider}")
+    
     try:
         check_scorer_connectivity()
         print()

@@ -6,10 +6,25 @@ PPO Runner - Phase 3.2 多种子训练调度器
 
 import argparse
 import os
-
-# 生产模式防伪闸门 - 硬约束
-assert os.getenv("RUN_MODE") == "prod", "❌ RUN_MODE!=prod：拒绝dry-run"
 import json
+import sys
+
+# ⛔ 熔断闸门 - 总架构师强制要求，不可绕过
+GO_FILE = "reports/preflight/RC1_GO"
+if not os.getenv("RUN_MODE")=="prod":
+    raise SystemExit("RUN_MODE!=prod：禁止启动")
+if not os.path.exists("reports/preflight/round2_pass.json"):
+    raise SystemExit("二轮预检未完成：禁止启动")
+try:
+    r2 = json.load(open("reports/preflight/round2_pass.json"))
+    assert r2.get("pass") is True
+except Exception:
+    raise SystemExit("round2_pass.json 无效或未通过：禁止启动")
+if not os.path.exists(GO_FILE):
+    raise SystemExit("缺少 PM 放行文件 RC1_GO：禁止启动")
+
+# 原有防伪闸门保留
+# assert os.getenv("RUN_MODE") == "prod", "❌ RUN_MODE!=prod：拒绝dry-run"
 import time
 import logging
 import sys

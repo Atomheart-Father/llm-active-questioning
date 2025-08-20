@@ -234,6 +234,16 @@ def main():
     parser.add_argument('--tools', default='wiki,calc', help='可用工具，逗号分隔')
     parser.add_argument('--templates_dir', default='templates/pack_v2', help='模板目录')
     parser.add_argument('--seed', type=int, default=42, help='随机种子')
+    parser.add_argument('--min_roles', type=int, default=4, help='最少角色数')
+    parser.add_argument('--min_styles', type=int, default=3, help='最少语体数')
+    parser.add_argument('--role_style_balanced', action='store_true', help='角色语体平衡')
+    parser.add_argument('--distinct_prompts', action='store_true', help='启用提示词多样化')
+    parser.add_argument('--min_tool_hops', type=int, default=3, help='最少工具调用数')
+    parser.add_argument('--force_multihop', action='store_true', help='强制多跳推理')
+    parser.add_argument('--ops_numeric_min', type=int, default=3, help='最少数值操作数')
+    parser.add_argument('--connector_target', default='hard', help='连接词密度目标')
+    parser.add_argument('--entity_permute', type=float, default=0.3, help='实体替换比例')
+    parser.add_argument('--distractor_injection', type=float, default=0.25, help='干扰因子注入比例')
     
     args = parser.parse_args()
     

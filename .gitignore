@@ -2,6 +2,9 @@
 __pycache__/
 *.py[cod]
 *$py.class
+
+# Environment files (contains sensitive API keys)
+.env
 *.so
 .Python
 build/
