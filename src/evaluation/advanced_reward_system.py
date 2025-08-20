@@ -541,6 +541,10 @@ class MultiDimensionalRewardSystem:
             
         except Exception as e:
             logger.error(f"对话评估失败: {e}")
+            # 生产模式：严格禁止降级到模拟评分
+            import os
+            if os.getenv("RUN_MODE") == "prod":
+                raise RuntimeError(f"生产模式评分失败，拒绝fallback: {e}")
             return self._generate_fallback_result(dialogue, str(e))
     
     def _get_gpt_scores_cached(self, dialogue: Dict) -> Tuple[Dict[str, float], float]:

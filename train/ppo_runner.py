@@ -200,6 +200,19 @@ class PPORunner:
             
             # 检查KL稳定性
             if current_step % eval_every == 0 and current_step > 0:
+                # 1k步健康点：强制防伪检查
+                if current_step == 1000:
+                    logger.info("执行1k步健康点防伪检查...")
+                    import subprocess
+                    result = subprocess.run([
+                        sys.executable, "scripts/assert_not_simulated.py"
+                    ], capture_output=True, text=True)
+                    if result.returncode != 0:
+                        logger.error(f"1k步防伪检查失败: {result.stderr}")
+                        logger.error("自动停训，退出非零码")
+                        raise RuntimeError("1k步健康点检查失败，停止训练")
+                    logger.info("1k步防伪检查通过，继续训练")
+                
                 kl_stable = self._check_kl_stability(training_curves['kl_divs'][-3:])
                 if not kl_stable:
                     kl_violations.append(current_step)
@@ -308,6 +321,27 @@ class PPORunner:
                 seed=seed,
                 stratify=True
             )
+            
+            # 影子指标闸门检查（最终评估时检查）
+            spearman = shadow_result.get('correlations', {}).get('stable_dataset', {}).get('spearman', 0)
+            if spearman < 0.55:
+                logger.warning(f"影子指标偏低: spearman={spearman:.3f} < 0.55")
+                # 保存debug信息但不终止（最终评估时）
+                debug_info = {
+                    'seed': seed,
+                    'spearman': spearman,
+                    'shadow_result_summary': {
+                        'spearman': spearman,
+                        'top10_overlap': shadow_result.get('overlap_metrics', {}).get('top10_overlap', 0),
+                        'corr_improve_pct': shadow_result.get('task_success_correlation', {}).get('corr_improve_pct', 0)
+                    },
+                    'checkpoint_path': checkpoint_path
+                }
+                
+                debug_file = Path(f"reports/rc1/shadow_debug_seed_{seed}.json")
+                with open(debug_file, 'w', encoding='utf-8') as f:
+                    json.dump(debug_info, f, indent=2, default=self._json_serializer)
+                logger.info(f"影子指标debug信息保存至: {debug_file}")
             
             # 模拟任务特定成功率
             task_success = {
