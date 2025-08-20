@@ -1,0 +1,20 @@
+run_mode: prod
+scorer_provider: gemini
+dataset_mix: "hotpotqa:0.45,strategyqa:0.30,gsm8k:0.25"
+precheck_thresholds:
+  spearman_min: 0.55
+  top10_min: 0.60
+rc_gate:
+  spearman_min: 0.75
+  top10_min: 0.70
+  corr_improve_pct_min: 0.10
+overclar_penalty:
+  enabled: true
+  alpha: 0.07
+  cap: 3
+difficulty_target: "easy:0.25,medium:0.45,hard:0.30"
+save_steps: 500
+checkpoint_keep: 4
+max_concurrent: 2
+cache_ttl_days: 14
+scoring_k: 3
