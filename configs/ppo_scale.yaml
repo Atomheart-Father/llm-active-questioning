@@ -1,0 +1,95 @@
+# Phase 3.2 扩量训练配置 - RC1候选模型
+# 基于Phase 3.1的成功试炼，扩展到产线级训练规模
+
+base_model: ${ENV.BASE_MODEL}  # 环境变量注入，如 qwen2.5-7b-instruct
+tokenizer: ${ENV.TOKENIZER:-auto}
+
+# 数据与采样策略
+datasets:
+  hotpotqa: 0.45     # 多跳推理任务（主要需要澄清）
+  strategyqa: 0.30   # 策略推理任务
+  gsm8k: 0.25       # 数学推理任务
+
+rollout_len: 128     # 单轮rollout最大长度
+max_turns: 6         # 最大对话轮数
+train_samples: 80_000 # 扩量轨迹池（10倍于试炼版）
+
+# 训练规模与优化
+steps: 50_000        # 训练步数（10倍于试炼版）
+batch_size: 64       # 批量大小（加倍）
+mini_batch_size: 4   # 小批量
+lr: 1.0e-5          # 学习率
+ppo_clip: 0.2       # PPO裁剪参数
+gae_lambda: 0.95    # GAE参数
+gamma: 0.99         # 折扣因子
+vf_coef: 0.5        # 价值函数系数
+grad_checkpointing: true  # 梯度检查点（节省显存）
+
+# KL散度与稳定性控制
+init_kl_coef: 0.02    # 初始KL系数
+target_kl: 0.03       # 目标KL散度
+kl_adaptation: true   # 自适应KL调整
+max_kl_alert: 0.12    # KL散度警报阈值（连续3次>此值则回滚）
+
+# 奖励聚合（基于Phase 2校准结果）
+weights_file: "configs/weights.json"  # Phase 2.2产物
+use_overclar_penalty: true            # 启用过度澄清惩罚
+overclar:
+  alpha: 0.07  # 起始惩罚强度
+  cap: 3       # 澄清问题上限
+
+# 评分服务与并发
+scorer_provider: deepseek_r1  # 与Phase 2一致
+k_vote: 3                     # K=3投票聚合
+max_concurrent: 6             # 并发评估数（提升）
+cache_ttl_days: 14           # 缓存TTL
+
+# 评估策略
+eval_shadow_n: 245         # 影子评估样本数（与Phase 2对齐）
+eval_every_steps: 1000     # 评估频率
+save_every_steps: 1000     # 保存频率
+
+# 多种子实验
+seeds: [20250820, 20250821, 20250822]  # 三种子确保可复现性
+
+# 记录与监控
+wandb: false              # 暂不使用wandb
+seed: 20250820           # 默认种子
+
+# Phase 3.2 新增功能配置
+advanced_features:
+  # 优先采样（低绩样本加权）
+  priority_sampling:
+    enabled: true
+    low_perf_ratio: 0.30      # 低性能样本占比上限
+    failure_boost: 2.0        # 失败样本权重倍数
+    
+  # 分阶段α退火
+  alpha_annealing:
+    enabled: true
+    phase1_steps: 20000       # 前20k步保持α=0.07
+    phase2_steps: 30000       # 后30k步线性退火至0.05
+    final_alpha: 0.05
+    
+  # 长程稳态守护
+  stability_guard:
+    enabled: true
+    kl_window: 3              # KL监控窗口（连续评估次数）
+    max_rollbacks: 2          # 最大回滚次数
+    auto_alpha_reduce: true   # 自动降低α应对spam
+
+# 奖励破解检测阈值
+hacking_thresholds:
+  ask_spam_rate: 0.05       # 澄清spam率上限（5%）
+  format_exploit_rate: 0.03 # 格式利用率上限（3%）
+  variance_spike_rate: 0.10 # 方差激增率上限（10%）
+
+# RC1验收门槛
+acceptance_criteria:
+  success_improvement_pp: 7     # 成功率提升≥7个百分点
+  overclar_reduction_pct: 25    # 过度澄清率下降≥25%
+  avg_turns_delta_max: 0        # 平均轮数不增加
+  shadow_spearman_min: 0.78     # 影子评估spearman≥0.78
+  shadow_top10_min: 0.72       # top10重合≥0.72
+  shadow_corr_improve_min: 12   # 相关性提升≥12%
+  reproducibility_iqr_max: 3    # 三种子IQR≤3个百分点
