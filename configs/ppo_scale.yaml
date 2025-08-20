@@ -14,6 +14,20 @@ rollout_len: 128     # 单轮rollout最大长度
 max_turns: 6         # 最大对话轮数
 train_samples: 80_000 # 扩量轨迹池（10倍于试炼版）
 
+# 种子池配置（难度感知采样）
+seed_pool: "data/rollouts/rc1_seed.balanced.jsonl"
+priority_sampling:
+  enable: true
+  by_difficulty: 
+    easy: 0.2
+    medium: 0.4
+    hard: 0.4
+  low_perf_cap: 0.30
+  seed_ratio_schedule:
+    - {step: 0, ratio: 0.50}
+    - {step: 20000, ratio: 0.35}
+    - {step: 40000, ratio: 0.20}
+
 # 训练规模与优化
 steps: 50_000        # 训练步数（10倍于试炼版）
 batch_size: 64       # 批量大小（加倍）

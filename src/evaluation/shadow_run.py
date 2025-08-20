@@ -573,6 +573,9 @@ def main():
     parser.add_argument("--stratify", action="store_true", default=True, help="是否分层抽样")
     parser.add_argument("--config", default="configs/default_config.yaml", help="配置文件路径")
     parser.add_argument("--output", help="输出文件路径")
+    parser.add_argument("--materialize", help="物化样本到指定文件")
+    parser.add_argument("--dump-manifest", dest="dump_manifest", help="输出样本清单到指定文件")
+    parser.add_argument("--tag", default="shadow_run", help="运行标签")
     
     args = parser.parse_args()
     
@@ -582,6 +585,57 @@ def main():
     try:
         # 创建评估器
         evaluator = ShadowRunEvaluator(args.config)
+        
+        # 如果需要物化样本，先生成并保存
+        if args.materialize:
+            logger.info(f"物化样本到: {args.materialize}")
+            if args.stratify:
+                samples = evaluator.generate_stratified_sample(args.n, args.seed)
+            else:
+                samples = evaluator.load_or_generate_sample_data(args.n, args.seed)
+            
+            # 保存样本
+            materialize_path = Path(args.materialize)
+            materialize_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            with open(materialize_path, 'w', encoding='utf-8') as f:
+                for sample in samples:
+                    f.write(json.dumps(sample, ensure_ascii=False) + '\n')
+            
+            logger.info(f"已物化 {len(samples)} 个样本")
+            
+            # 如果需要生成manifest
+            if args.dump_manifest:
+                manifest = {
+                    'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+                    'total_samples': len(samples),
+                    'seed': args.seed,
+                    'stratified': args.stratify,
+                    'tasks': {},
+                    'samples': []
+                }
+                
+                # 统计任务分布
+                from collections import Counter
+                task_counts = Counter()
+                for sample in samples:
+                    task = sample.get('task', 'unknown')
+                    task_counts[task] += 1
+                    manifest['samples'].append({
+                        'id': sample.get('id', ''),
+                        'task': task,
+                        'question': sample.get('question', '')[:100] + '...' if len(sample.get('question', '')) > 100 else sample.get('question', '')
+                    })
+                
+                manifest['tasks'] = dict(task_counts)
+                
+                manifest_path = Path(args.dump_manifest)
+                manifest_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                with open(manifest_path, 'w', encoding='utf-8') as f:
+                    json.dump(manifest, f, ensure_ascii=False, indent=2)
+                
+                logger.info(f"样本清单保存到: {manifest_path}")
         
         # 执行评估
         result = evaluator.run_shadow_evaluation(args.n, args.seed, args.stratify)
