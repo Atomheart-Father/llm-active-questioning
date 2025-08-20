@@ -5,6 +5,10 @@ PPO Runner - Phase 3.2 多种子训练调度器
 """
 
 import argparse
+import os
+
+# 生产模式防伪闸门 - 硬约束
+assert os.getenv("RUN_MODE") == "prod", "❌ RUN_MODE!=prod：拒绝dry-run"
 import json
 import time
 import logging
@@ -56,6 +60,9 @@ class PPORunner:
         
         # 设置日志
         self._setup_logging()
+        
+        # 配置防伪闸门检查
+        assert not self.config.get("simulate", False), "❌ simulate=true：拒绝dry-run"
         
         # 初始化评估器
         config_path = self.config.get('base_config', 'configs/default_config.yaml')

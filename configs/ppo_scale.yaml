@@ -56,6 +56,23 @@ seeds: [20250820, 20250821, 20250822]  # 三种子确保可复现性
 wandb: false              # 暂不使用wandb
 seed: 20250820           # 默认种子
 
+# 生产模式控制（防伪闸门）
+simulate: false
+live_mode: true
+
+# 真训练配置（QLoRA优化，适配4B底模）
+finetune:
+  method: qlora
+  load_in_4bit: true
+  quant_type: nf4
+  lora_r: 64
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules: [q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj]
+  gradient_checkpointing: true
+  per_device_train_batch_size: 1
+  gradient_accumulation: 8
+
 # Phase 3.2 新增功能配置
 advanced_features:
   # 优先采样（低绩样本加权）
