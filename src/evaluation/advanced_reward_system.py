@@ -1,0 +1,713 @@
+#!/usr/bin/env python3
+"""
+多维度奖励系统
+基于GPT-5技术方案实现的硬规则+GPT评分混合奖励系统
+"""
+
+import json
+import time
+import hashlib
+import sqlite3
+import threading
+import re
+import statistics
+from typing import Dict, Any, List, Tuple, Optional
+import logging
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+def canonical_json(obj: Dict) -> str:
+    """生成标准化JSON字符串"""
+    return json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+def make_cache_key(dialogue: Dict, spec: str) -> str:
+    """生成缓存键"""
+    payload = canonical_json(dialogue) + "||" + spec
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+class GeminiCache:
+    """Gemini评分缓存系统
+    
+    特性:
+    - SQLite持久化存储
+    - TTL过期机制
+    - 方差稳定性跟踪
+    - 线程安全
+    """
+    
+    def __init__(self, db_path="gemini_cache.sqlite", ttl_days=14):
+        self.db_path = db_path
+        self.ttl_ms = ttl_days * 24 * 3600 * 1000
+        self._lock = threading.Lock()
+        self._init_db()
+        
+        logger.info(f"GeminiCache initialized: db={db_path}, ttl={ttl_days}days")
+    
+    def _init_db(self):
+        """初始化数据库"""
+        with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS gemini_score_cache(
+                    key TEXT PRIMARY KEY,
+                    payload_norm TEXT NOT NULL,
+                    scoring_spec TEXT NOT NULL,
+                    score_json TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    api_latency_ms INTEGER,
+                    created_at INTEGER,
+                    updated_at INTEGER,
+                    expiry_at INTEGER,
+                    variance REAL,
+                    tries INTEGER DEFAULT 1
+                )
+            """)
+            
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_expiry 
+                ON gemini_score_cache(expiry_at)
+            """)
+            
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_status 
+                ON gemini_score_cache(status)
+            """)
+            
+            conn.commit()
+    
+    def get(self, key: str) -> Optional[Dict[str, Any]]:
+        """获取缓存项"""
+        with self._lock:
+            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
+                cur = conn.execute(
+                    "SELECT score_json, status, expiry_at, variance FROM gemini_score_cache WHERE key=?", 
+                    (key,)
+                )
+                row = cur.fetchone()
+                
+                if not row:
+                    return None
+                
+                score_json, status, expiry_at, variance = row
+                
+                # 检查过期
+                if expiry_at and expiry_at < int(time.time() * 1000):
+                    return None
+                
+                return {
+                    "score": json.loads(score_json),
+                    "status": status,
+                    "variance": variance or 0.0
+                }
+    
+    def put(self, key: str, payload_norm: str, spec: str, score: Dict, 
+           status: str, latency_ms: int, variance: float, tries: int):
+        """存储缓存项"""
+        with self._lock:
+            now = int(time.time() * 1000)
+            expiry = now + self.ttl_ms
+            
+            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
+                # 使用UPSERT保留原有created_at
+                conn.execute("""
+                    INSERT OR REPLACE INTO gemini_score_cache
+                    (key, payload_norm, scoring_spec, score_json, status, 
+                     api_latency_ms, created_at, updated_at, expiry_at, variance, tries)
+                    VALUES (?, ?, ?, ?, ?, ?, 
+                            COALESCE((SELECT created_at FROM gemini_score_cache WHERE key=?), ?), 
+                            ?, ?, ?, ?)
+                """, (
+                    key, payload_norm, spec, json.dumps(score, ensure_ascii=False), 
+                    status, latency_ms, key, now, now, expiry, variance, tries
+                ))
+                conn.commit()
+    
+    def invalidate_by_spec(self, spec_pattern: str):
+        """按规范模式失效缓存"""
+        with self._lock:
+            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
+                conn.execute(
+                    "UPDATE gemini_score_cache SET expiry_at=0 WHERE scoring_spec LIKE ?",
+                    (spec_pattern,)
+                )
+                conn.commit()
+                
+        logger.info(f"缓存失效: spec_pattern={spec_pattern}")
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """获取缓存统计"""
+        with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
+            cur = conn.execute("""
+                SELECT 
+                    COUNT(*) as total,
+                    SUM(CASE WHEN expiry_at > ? THEN 1 ELSE 0 END) as valid,
+                    SUM(CASE WHEN status='ok' THEN 1 ELSE 0 END) as ok_count,
+                    SUM(CASE WHEN status='ok_unstable' THEN 1 ELSE 0 END) as unstable_count,
+                    AVG(api_latency_ms) as avg_latency,
+                    AVG(variance) as avg_variance
+                FROM gemini_score_cache
+            """, (int(time.time() * 1000),))
+            
+            row = cur.fetchone()
+            
+            return {
+                "total_entries": row[0] or 0,
+                "valid_entries": row[1] or 0,
+                "ok_count": row[2] or 0,
+                "unstable_count": row[3] or 0,
+                "avg_latency_ms": round(row[4] or 0, 1),
+                "avg_variance": round(row[5] or 0, 4),
+                "hit_rate": round((row[1] or 0) / max(1, row[0] or 1), 3)
+            }
+
+class HardRuleEvaluator:
+    """硬规则评估器
+    
+    评估客观可验证的指标：
+    - 澄清问题识别
+    - 思考链检测
+    - 计算正确性
+    - 格式规范性
+    """
+    
+    def __init__(self):
+        # 澄清问题模式
+        self.clarification_patterns = [
+            r'[？?]',  # 问号
+            r'请问|能否|可以.*吗|是否',  # 礼貌询问
+            r'哪.*?[？?]|什么.*?[？?]|如何.*?[？?]|为什么.*?[？?]',  # 疑问词
+            r'<QUESTION>.*?</QUESTION>',  # 结构化标签
+            r'我需要.*?确认|需要.*?澄清|不太确定',  # 澄清表述
+        ]
+        
+        # 思考链模式
+        self.thinking_patterns = [
+            r'<think>.*?</think>',  # 思考标签
+            r'让我.*?想.*?一下|我来.*?分析',  # 思考表述
+            r'首先.*?然后.*?最后|第一.*?第二.*?第三',  # 步骤标识
+            r'因为.*?所以|由于.*?因此',  # 因果逻辑
+        ]
+        
+        # 数学计算模式
+        self.math_patterns = [
+            r'\d+\s*[+\-*/×÷]\s*\d+\s*=\s*\d+',  # 计算表达式
+            r'面积\s*=|周长\s*=|体积\s*=',  # 几何公式
+            r'解：|答：|所以.*?=',  # 数学解答格式
+        ]
+    
+    def evaluate(self, dialogue: Dict) -> Dict[str, Any]:
+        """评估硬规则指标"""
+        # 提取对话文本
+        text = self._extract_text(dialogue)
+        
+        # 检测各项指标
+        has_clarification = self._detect_clarification(text)
+        has_thinking = self._detect_thinking(text)
+        has_math = self._detect_math(text)
+        format_score = self._evaluate_format(dialogue)
+        
+        # 计算步骤数
+        step_count = self._count_steps(text)
+        
+        # 计算硬规则总分
+        base_score = 0.3  # 基础分
+        
+        if has_clarification:
+            base_score += 0.25
+        if has_thinking:
+            base_score += 0.25
+        if has_math and self._verify_math(text):
+            base_score += 0.15
+        if format_score > 0.8:
+            base_score += 0.05
+        
+        rules_score = min(1.0, base_score)
+        
+        return {
+            "rules_score": round(rules_score, 3),
+            "binary_indicators": {
+                "has_clarification": has_clarification,
+                "has_thinking_chain": has_thinking,
+                "has_math_calculation": has_math,
+                "format_valid": format_score > 0.7
+            },
+            "metrics": {
+                "step_count": step_count,
+                "format_score": round(format_score, 3),
+                "text_length": len(text)
+            }
+        }
+    
+    def _extract_text(self, dialogue: Dict) -> str:
+        """提取对话文本"""
+        if isinstance(dialogue, dict):
+            if "turns" in dialogue:
+                # 多轮对话格式
+                parts = []
+                for turn in dialogue["turns"]:
+                    if isinstance(turn, dict) and "content" in turn:
+                        parts.append(turn["content"])
+                return " ".join(parts)
+            elif "content" in dialogue:
+                return dialogue["content"]
+            else:
+                return json.dumps(dialogue, ensure_ascii=False)
+        return str(dialogue)
+    
+    def _detect_clarification(self, text: str) -> bool:
+        """检测澄清问题"""
+        for pattern in self.clarification_patterns:
+            if re.search(pattern, text, re.IGNORECASE):
+                return True
+        return False
+    
+    def _detect_thinking(self, text: str) -> bool:
+        """检测思考链"""
+        for pattern in self.thinking_patterns:
+            if re.search(pattern, text, re.IGNORECASE | re.DOTALL):
+                return True
+        return False
+    
+    def _detect_math(self, text: str) -> bool:
+        """检测数学计算"""
+        for pattern in self.math_patterns:
+            if re.search(pattern, text):
+                return True
+        return False
+    
+    def _verify_math(self, text: str) -> bool:
+        """验证数学计算正确性"""
+        # 简化的数学验证
+        calc_pattern = r'(\d+)\s*([+\-*/×÷])\s*(\d+)\s*=\s*(\d+)'
+        matches = re.findall(calc_pattern, text)
+        
+        for match in matches:
+            try:
+                a, op, b, result = int(match[0]), match[1], int(match[2]), int(match[3])
+                
+                if op in ['+']:
+                    expected = a + b
+                elif op in ['-']:
+                    expected = a - b
+                elif op in ['*', '×']:
+                    expected = a * b
+                elif op in ['/', '÷']:
+                    expected = a // b if b != 0 else 0
+                else:
+                    continue
+                
+                if expected != result:
+                    return False
+                    
+            except (ValueError, ZeroDivisionError):
+                return False
+        
+        return True
+    
+    def _count_steps(self, text: str) -> int:
+        """统计推理步骤数"""
+        step_indicators = [
+            r'第[一二三四五六七八九十\d]+步|步骤[一二三四五六七八九十\d]+',
+            r'首先|然后|接下来|最后|其次',
+            r'\d+\.',  # 数字列表
+            r'→|⇒|=>',  # 箭头
+        ]
+        
+        total_steps = 0
+        for pattern in step_indicators:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            total_steps += len(matches)
+        
+        return min(total_steps, 20)  # 限制最大步骤数
+    
+    def _evaluate_format(self, dialogue: Dict) -> float:
+        """评估格式规范性"""
+        score = 1.0
+        
+        # 检查JSON结构
+        if not isinstance(dialogue, dict):
+            score -= 0.3
+        
+        # 检查必要字段
+        if isinstance(dialogue, dict):
+            if "turns" in dialogue:
+                turns = dialogue["turns"]
+                if not isinstance(turns, list):
+                    score -= 0.2
+                else:
+                    for turn in turns:
+                        if not isinstance(turn, dict):
+                            score -= 0.1
+                        elif "role" not in turn or "content" not in turn:
+                            score -= 0.1
+            elif "content" not in dialogue:
+                score -= 0.2
+        
+        return max(0.0, score)
+
+class GeminiEvaluator:
+    """Gemini模型评估器
+    
+    使用Gemini API进行主观质量评估
+    """
+    
+    def __init__(self, model_name="gemini-2.5-pro", prompt_version="v1", 
+                 temperature=0.0, top_p=0.0):
+        self.model_name = model_name
+        self.prompt_version = prompt_version
+        self.temperature = temperature
+        self.top_p = top_p
+        
+        # 评估提示模板
+        self.evaluation_prompt = """
+请对以下对话进行多维度质量评估，返回JSON格式结果：
+
+对话内容：
+{dialogue_text}
+
+评估维度（0-1分）：
+1. logic_rigor: 逻辑严谨性（推理是否连贯、无漏洞）
+2. question_quality: 提问质量（澄清是否精准、必要）
+3. reasoning_completeness: 推理完整性（步骤是否完整、清晰）
+4. natural_interaction: 交互自然度（对话是否流畅、礼貌）
+
+请返回格式：
+{
+    "logic_rigor": 0.85,
+    "question_quality": 0.78,
+    "reasoning_completeness": 0.82,
+    "natural_interaction": 0.76,
+    "explanation": "简要说明评分理由"
+}
+"""
+    
+    def evaluate(self, dialogue: Dict) -> Tuple[Dict[str, float], float]:
+        """评估对话质量"""
+        # 生成评估规范
+        spec = f"{self.model_name}|v={self.prompt_version}|temp={self.temperature}|top_p={self.top_p}|dims=logic,question,reasoning,natural"
+        
+        # 模拟多次评估（实际应调用Gemini API）
+        scores_list = self._simulate_multiple_evaluations(dialogue)
+        
+        # 计算中位数和方差
+        median_scores = {}
+        variances = []
+        
+        for key in scores_list[0].keys():
+            if key != "explanation":
+                values = [score[key] for score in scores_list]
+                median_scores[key] = statistics.median(values)
+                variances.append(statistics.variance(values) if len(values) > 1 else 0.0)
+        
+        overall_variance = statistics.mean(variances) if variances else 0.0
+        
+        return median_scores, overall_variance
+    
+    def _simulate_multiple_evaluations(self, dialogue: Dict, k=3) -> List[Dict[str, float]]:
+        """模拟多次评估（实际应替换为真实API调用）"""
+        import random
+        
+        # 提取对话文本用于评估
+        text = self._extract_dialogue_text(dialogue)
+        
+        # 基于文本特征生成模拟评分
+        base_scores = self._generate_base_scores(text)
+        
+        # 生成K次带噪声的评估
+        evaluations = []
+        for _ in range(k):
+            scores = {}
+            for key, base_score in base_scores.items():
+                # 添加小幅随机噪声
+                noise = random.gauss(0, 0.05)
+                scores[key] = max(0.0, min(1.0, base_score + noise))
+            
+            scores["explanation"] = "模拟评估结果"
+            evaluations.append(scores)
+        
+        return evaluations
+    
+    def _extract_dialogue_text(self, dialogue: Dict) -> str:
+        """提取对话文本"""
+        if "turns" in dialogue:
+            parts = []
+            for turn in dialogue["turns"]:
+                if isinstance(turn, dict) and "content" in turn:
+                    role = turn.get("role", "")
+                    content = turn.get("content", "")
+                    parts.append(f"{role}: {content}")
+            return "\n".join(parts)
+        elif "content" in dialogue:
+            return dialogue["content"]
+        else:
+            return str(dialogue)
+    
+    def _generate_base_scores(self, text: str) -> Dict[str, float]:
+        """基于文本特征生成基础评分"""
+        # 这里使用启发式规则模拟GPT评分
+        # 实际使用时应替换为真实的API调用
+        
+        scores = {
+            "logic_rigor": 0.75,
+            "question_quality": 0.70,
+            "reasoning_completeness": 0.72,
+            "natural_interaction": 0.68
+        }
+        
+        # 基于文本特征调整评分
+        if "?" in text or "？" in text:
+            scores["question_quality"] += 0.1
+        
+        if any(word in text for word in ["因为", "所以", "首先", "然后"]):
+            scores["logic_rigor"] += 0.1
+            scores["reasoning_completeness"] += 0.1
+        
+        if any(word in text for word in ["请问", "谢谢", "好的"]):
+            scores["natural_interaction"] += 0.15
+        
+        if "<think>" in text:
+            scores["reasoning_completeness"] += 0.15
+        
+        # 确保分数在合理范围内
+        for key in scores:
+            scores[key] = max(0.1, min(1.0, scores[key]))
+        
+        return scores
+
+class MultiDimensionalRewardSystem:
+    """多维度奖励系统
+    
+    结合硬规则和GPT评分的混合奖励系统
+    """
+    
+    def __init__(self, model_name="gemini-2.5-pro", prompt_version="v1", 
+                 temperature=0.0, top_p=0.0, cache_db="gemini_cache.sqlite"):
+        self.model_name = model_name
+        self.prompt_version = prompt_version
+        self.temperature = temperature
+        self.top_p = top_p
+        
+        # 初始化组件
+        self.cache = GeminiCache(cache_db)
+        self.hard_evaluator = HardRuleEvaluator()
+        self.gpt_evaluator = GeminiEvaluator(model_name, prompt_version, temperature, top_p)
+        
+        # 初始权重（30%硬规则 + 70%GPT评分）
+        self.weights = {
+            "rules": 0.30,
+            "logic_rigor": 0.20,
+            "question_quality": 0.18,
+            "reasoning_completeness": 0.20,
+            "natural_interaction": 0.12
+        }
+        
+        logger.info(f"MultiDimensionalRewardSystem initialized with {model_name}")
+    
+    def evaluate_dialogue(self, dialogue: Dict) -> Dict[str, Any]:
+        """评估对话并返回多维度奖励"""
+        try:
+            # 硬规则评估
+            hard_results = self.hard_evaluator.evaluate(dialogue)
+            
+            # GPT评估（带缓存）
+            gpt_scores, variance = self._get_gpt_scores_cached(dialogue)
+            
+            # 计算主奖励
+            primary_reward = self._calculate_primary_reward(hard_results, gpt_scores)
+            
+            # 构建完整结果
+            result = {
+                "primary_reward": round(primary_reward, 4),
+                "component_scores": {
+                    "logic_rigor": round(gpt_scores["logic_rigor"], 3),
+                    "question_quality": round(gpt_scores["question_quality"], 3),
+                    "reasoning_completeness": round(gpt_scores["reasoning_completeness"], 3),
+                    "natural_interaction": round(gpt_scores["natural_interaction"], 3)
+                },
+                "binary_indicators": hard_results["binary_indicators"],
+                "hard_rules": {
+                    "rules_score": hard_results["rules_score"],
+                    "metrics": hard_results["metrics"]
+                },
+                "meta": {
+                    "variance": round(variance, 4),
+                    "weights_used": self.weights.copy(),
+                    "model": self.model_name,
+                    "version": self.prompt_version
+                }
+            }
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"对话评估失败: {e}")
+            return self._generate_fallback_result(dialogue, str(e))
+    
+    def _get_gpt_scores_cached(self, dialogue: Dict) -> Tuple[Dict[str, float], float]:
+        """获取GPT评分（带缓存）"""
+        # 生成缓存键
+        spec = f"{self.model_name}|v={self.prompt_version}|temp={self.temperature}|top_p={self.top_p}|dims=logic,question,reasoning,natural"
+        key = make_cache_key(dialogue, spec)
+        
+        # 检查缓存
+        cached = self.cache.get(key)
+        if cached and cached["status"] == "ok":
+            return cached["score"]["component_scores"], cached["variance"]
+        
+        # 执行评估
+        start_time = time.time()
+        try:
+            gpt_scores, variance = self.gpt_evaluator.evaluate(dialogue)
+            latency_ms = int((time.time() - start_time) * 1000)
+            
+            # 确定状态
+            status = "ok_unstable" if variance > 0.08 else "ok"
+            
+            # 写入缓存
+            cache_data = {
+                "component_scores": gpt_scores,
+                "variance": variance
+            }
+            
+            self.cache.put(
+                key, canonical_json(dialogue), spec, cache_data,
+                status, latency_ms, variance, 3
+            )
+            
+            return gpt_scores, variance
+            
+        except Exception as e:
+            logger.error(f"GPT评估失败: {e}")
+            # 返回默认分数
+            return {
+                "logic_rigor": 0.5,
+                "question_quality": 0.5,
+                "reasoning_completeness": 0.5,
+                "natural_interaction": 0.5
+            }, 0.0
+    
+    def _calculate_primary_reward(self, hard_results: Dict, gpt_scores: Dict) -> float:
+        """计算主奖励分数"""
+        primary = (
+            self.weights["rules"] * hard_results["rules_score"] +
+            self.weights["logic_rigor"] * gpt_scores["logic_rigor"] +
+            self.weights["question_quality"] * gpt_scores["question_quality"] +
+            self.weights["reasoning_completeness"] * gpt_scores["reasoning_completeness"] +
+            self.weights["natural_interaction"] * gpt_scores["natural_interaction"]
+        )
+        
+        return max(0.0, min(1.0, primary))
+    
+    def _generate_fallback_result(self, dialogue: Dict, error: str) -> Dict[str, Any]:
+        """生成失败时的备用结果"""
+        return {
+            "primary_reward": 0.0,
+            "component_scores": {
+                "logic_rigor": 0.0,
+                "question_quality": 0.0,
+                "reasoning_completeness": 0.0,
+                "natural_interaction": 0.0
+            },
+            "binary_indicators": {
+                "has_clarification": False,
+                "has_thinking_chain": False,
+                "has_math_calculation": False,
+                "format_valid": False
+            },
+            "hard_rules": {
+                "rules_score": 0.0,
+                "metrics": {"step_count": 0, "format_score": 0.0, "text_length": 0}
+            },
+            "meta": {
+                "error": error,
+                "variance": 0.0,
+                "weights_used": self.weights.copy()
+            }
+        }
+    
+    def combine_signals(self, signals: Dict[str, float]) -> float:
+        """合并多个信号为单一奖励"""
+        return sum(self.weights.get(k, 0) * v for k, v in signals.items())
+    
+    def calibrate_weights(self, labeled_data: List[Dict]) -> None:
+        """校准权重（基于标注数据）"""
+        # TODO: 实现基于标注数据的权重优化
+        # 可以使用最小二乘法 + 正则化
+        logger.info(f"权重校准待实现，当前数据量: {len(labeled_data)}")
+        pass
+    
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """获取缓存统计"""
+        return self.cache.get_stats()
+    
+    def invalidate_cache(self, pattern: str = None):
+        """失效缓存"""
+        if pattern:
+            self.cache.invalidate_by_spec(pattern)
+        else:
+            # 失效当前模型版本的所有缓存
+            pattern = f"{self.model_name}|v={self.prompt_version}|%"
+            self.cache.invalidate_by_spec(pattern)
+
+def main():
+    """测试函数"""
+    # 测试对话样本
+    test_dialogue = {
+        "id": "test_001",
+        "turns": [
+            {
+                "role": "user",
+                "content": "他什么时候出生的？"
+            },
+            {
+                "role": "assistant", 
+                "content": "抱歉，我需要更具体的信息。请问您指的是哪位人物呢？"
+            },
+            {
+                "role": "user",
+                "content": "爱因斯坦"
+            },
+            {
+                "role": "assistant",
+                "content": "<think>用户问的是爱因斯坦的出生时间。这是一个明确的历史事实。</think>\n\n阿尔伯特·爱因斯坦出生于1879年3月14日，出生地是德国乌尔姆。"
+            }
+        ]
+    }
+    
+    # 创建奖励系统
+    reward_system = MultiDimensionalRewardSystem()
+    
+    print("测试多维度奖励系统...")
+    print("=" * 50)
+    
+    # 评估对话
+    result = reward_system.evaluate_dialogue(test_dialogue)
+    
+    print("评估结果:")
+    print(f"主奖励: {result['primary_reward']}")
+    print("\n组件分数:")
+    for key, score in result["component_scores"].items():
+        print(f"  {key}: {score}")
+    
+    print("\n二元指标:")
+    for key, value in result["binary_indicators"].items():
+        print(f"  {key}: {value}")
+    
+    print("\n硬规则评估:")
+    hard_rules = result["hard_rules"]
+    print(f"  规则分数: {hard_rules['rules_score']}")
+    print(f"  步骤数: {hard_rules['metrics']['step_count']}")
+    print(f"  格式分数: {hard_rules['metrics']['format_score']}")
+    
+    print("\n元数据:")
+    meta = result["meta"]
+    print(f"  方差: {meta['variance']}")
+    print(f"  模型: {meta['model']}")
+    
+    # 缓存统计
+    cache_stats = reward_system.get_cache_stats()
+    print("\n缓存统计:")
+    print(json.dumps(cache_stats, indent=2, ensure_ascii=False))
+
+if __name__ == "__main__":
+    main()
