@@ -55,6 +55,57 @@ def check_shadow_results(shadow_file, spearman_min, top10_min):
         print(f"❌ 读取影子评估结果失败: {e}")
         return False
 
+def check_score_distribution_health(scores):
+    """检查评分分布健康度"""
+    import numpy as np
+    
+    if len(scores) < 10:
+        return False, "样本数量过少"
+    
+    scores_array = np.array(scores, dtype=float)
+    std = scores_array.std()
+    iqr = np.percentile(scores_array, 75) - np.percentile(scores_array, 25)
+    
+    print(f"  📊 评分分布: std={std:.3f}, IQR={iqr:.3f}")
+    
+    if std < 0.08:
+        return False, f"标准差过小: {std:.3f} < 0.08"
+    
+    if iqr < 0.12:
+        return False, f"四分位距过小: {iqr:.3f} < 0.12"
+    
+    return True, "分布健康"
+
+def check_data_audit():
+    """检查数据审计是否通过"""
+    audit_file = Path("reports/rc1/shadow_data_audit.json")
+    if not audit_file.exists():
+        return False, "影子数据审计文件不存在"
+    
+    try:
+        with open(audit_file, 'r', encoding='utf-8') as f:
+            audit_data = json.load(f)
+        
+        if not audit_data.get("passed", False):
+            failures = audit_data.get("failures", [])
+            return False, f"数据审计失败: {'; '.join(failures)}"
+        
+        # 打印关键指标
+        print("📊 数据审计指标:")
+        by_task = audit_data.get("by_task", {})
+        detempl = audit_data.get("detemplatization", {})
+        
+        print(f"  任务分布: {by_task}")
+        print(f"  掩码唯一率: {detempl.get('mask_uniqueness', 0):.3f}")
+        print(f"  最频繁掩码占比: {detempl.get('most_common_mask_ratio', 0):.3f}")
+        print(f"  高相似度对比例: {detempl.get('high_sim_ratio', 0):.3f}")
+        print(f"  题干长度均值: {detempl.get('mean_length', 0):.1f}")
+        
+        return True, "数据审计通过"
+        
+    except Exception as e:
+        return False, f"读取审计文件失败: {e}"
+
 def main():
     parser = argparse.ArgumentParser(description='RC1预跑检查')
     parser.add_argument('--shadow', required=True, help='影子评估数据文件')
@@ -65,6 +116,15 @@ def main():
     
     print("🔍 RC1预跑检查开始")
     print("=" * 40)
+    
+    # 0. 前置检查：数据审计
+    print("📋 检查数据审计...")
+    audit_passed, audit_msg = check_data_audit()
+    if not audit_passed:
+        print(f"❌ {audit_msg}")
+        sys.exit(1)
+    print(f"✅ {audit_msg}")
+    print()
     
     # 检查影子评估文件是否存在
     if not Path(args.shadow).exists():

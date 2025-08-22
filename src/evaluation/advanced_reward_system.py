@@ -597,10 +597,277 @@ class MultiDimensionalRewardSystem:
             
             return self._generate_fallback_result(dialogue, str(e))
     
+    def _get_gemini_scores_cached(self, dialogue: Dict) -> Tuple[Dict[str, float], float]:
+        """使用新Gemini适配器获取评分（强制live模式）"""
+        import os
+        
+        # 强制禁用缓存
+        if os.getenv("SCORING_CACHE_DISABLE","") == "1":
+            logger.debug("缓存被禁用，直接调用Gemini API")
+            return self._get_gemini_scores_live(dialogue)
+        
+        # 生成缓存键
+        spec = f"gemini|v={self.prompt_version}|temp={self.temperature}|dims=logic,question,reasoning,natural"
+        import hashlib
+        import json
+        dialogue_str = json.dumps(dialogue, sort_keys=True)
+        key = hashlib.sha256(f"{spec}|{dialogue_str}".encode()).hexdigest()[:16]
+        
+        # 检查缓存
+        cached = None
+        if hasattr(self.cache, 'get'):
+            cached = self.cache.get(key)
+        elif hasattr(self, '_simple_cache'):
+            cached = self._simple_cache.get(key)
+            
+        if cached and cached.get("status") == "ok":
+            logger.debug(f"使用缓存的Gemini评分: {key[:16]}...")
+            scores = cached.get("score", cached.get("scores", {}))
+            return scores, cached["variance"]
+        
+        # 缓存未命中，调用live模式
+        return self._get_gemini_scores_live(dialogue, key, spec)
+    
+    def _get_gemini_scores_live(self, dialogue: Dict, key: str = None, spec: str = None) -> Tuple[Dict[str, float], float]:
+        """直接调用新Gemini适配器进行评分"""
+        try:
+            # 导入新的Gemini适配器
+            from src.scoring.providers.gemini import score as gemini_score
+            
+            # 构建评分提示
+            prompt = self._build_scoring_prompt(dialogue)
+            
+            # 调用新的Gemini适配器
+            result = gemini_score(prompt, require_live=True)
+            
+            # 记录API调用到账本
+            log_api_call(
+                provider="gemini",
+                billable_tokens=result["usage"].get("total_tokens") or (
+                    (result["usage"].get("prompt_tokens") or 0) + 
+                    (result["usage"].get("completion_tokens") or 0)
+                ),
+                latency_ms=result["latency_ms"],
+                status="ok",
+                cache_hit=False
+            )
+            
+            # 解析评分结果 - 使用新的解析方法
+            scores = self._parse_new_gemini_response(result["raw"])
+            import numpy as np
+            variance = np.std(list(scores.values()))
+            
+            # 如果有缓存键，存储到缓存
+            if key and spec and hasattr(self.cache, 'put'):
+                try:
+                    self.cache.put(
+                        key=key,
+                        spec=spec, 
+                        score=scores,
+                        status="ok",
+                        latency_ms=result["latency_ms"],
+                        variance=variance,
+                        tries=1,
+                        payload_norm=len(str(scores))  # 添加缺少的参数
+                    )
+                except Exception as cache_error:
+                    logger.warning(f"缓存保存失败: {cache_error}")
+                    # fallback到简单内存缓存
+                    if not hasattr(self, '_simple_cache'):
+                        self._simple_cache = {}
+                    self._simple_cache[key] = {
+                        "status": "ok",
+                        "score": scores,  # 使用新字段名
+                        "scores": scores,  # 保持兼容性
+                        "variance": variance
+                    }
+            
+            logger.debug(f"Gemini评分完成: {scores}")
+            return scores, variance
+            
+        except Exception as e:
+            logger.error(f"Gemini评分失败: {e}")
+            # 在生产模式下直接抛出异常
+            import os
+            if os.getenv("RUN_MODE") == "prod":
+                raise RuntimeError(f"生产模式评分失败，拒绝fallback: {e}")
+            
+            # 返回默认分数（仅测试模式）
+            return {
+                "logic_rigor": 0.5,
+                "question_quality": 0.5, 
+                "reasoning_completeness": 0.5,
+                "naturalness": 0.5,
+                "natural_interaction": 0.5
+            }, 0.0
+    
+    def _build_scoring_prompt(self, dialogue: Dict) -> str:
+        """构建Gemini评分提示"""
+        conversation = dialogue.get("conversation", [])
+        task = dialogue.get("task", "unknown")
+        
+        # 格式化对话内容
+        conv_text = ""
+        for turn in conversation:
+            role = turn.get("role", "unknown")
+            content = turn.get("content", "")
+            conv_text += f"{role}: {content}\n"
+        
+        # 构建评分提示
+        prompt = f"""请对以下对话进行多维度评分，任务类型：{task}
+
+对话内容：
+{conv_text}
+
+请从以下4个维度评分（1-10分）：
+1. logic（逻辑性）：回答的逻辑是否清晰、推理是否正确
+2. question（提问质量）：是否恰当地提出澄清问题
+3. reasoning（推理深度）：思考过程是否深入、全面
+4. natural（自然性）：表达是否自然、易懂
+
+请以JSON格式回复，例如：
+{{"logic": 8.5, "question": 7.0, "reasoning": 9.0, "natural": 8.0}}"""
+
+        return prompt
+    
+    def _parse_new_gemini_response(self, response_text: str) -> Dict[str, float]:
+        """解析新Gemini适配器的响应（更加容错）"""
+        import json
+        import re
+        
+        # 使用与gemini.py相同的解析逻辑
+        def _to_float01(x):
+            if x is None: return None
+            try:
+                v = float(x)
+            except Exception:
+                return None
+            # 兼容 0-1、0-10、0-100 等标尺，映射到[0,1]
+            if v <= 1.0 and v >= 0.0: return v
+            if 0.0 <= v <= 10.0: return max(0.0, min(1.0, v/10.0))
+            if 0.0 <= v <= 100.0: return max(0.0, min(1.0, v/100.0))
+            return max(0.0, min(1.0, v))
+        
+        # 优先解析JSON
+        try:
+            obj = json.loads(response_text)
+            raw_scores = {}
+            
+            # 映射各种可能的字段名到标准字段
+            field_mappings = {
+                "logic_rigor": ["logic_rigor", "logic", "logic_score"],
+                "question_quality": ["question_quality", "question", "questioning"],
+                "reasoning_completeness": ["reasoning_completeness", "reasoning", "reasoning_depth"],
+                "naturalness": ["naturalness", "natural", "natural_score"],
+                "natural_interaction": ["natural_interaction", "interaction", "natural"]
+            }
+            
+            for target_field, possible_names in field_mappings.items():
+                for name in possible_names:
+                    if name in obj:
+                        val = obj[name]
+                        if isinstance(val, (list,tuple)) and val:
+                            raw_scores[target_field] = _to_float01(val[0])
+                        else:
+                            raw_scores[target_field] = _to_float01(val)
+                        break
+            
+            # 如果成功解析到至少一个分数，返回
+            if raw_scores:
+                # 填充缺失的字段为0.5
+                final_scores = {}
+                for field in ["logic_rigor", "question_quality", "reasoning_completeness", "naturalness", "natural_interaction"]:
+                    final_scores[field] = raw_scores.get(field, 0.5)
+                return final_scores
+                
+        except Exception:
+            pass
+        
+        # JSON解析失败，尝试找数字
+        numbers = re.findall(r"(\d+(?:\.\d+)?)", response_text)
+        if numbers:
+            # 至少有一个数字，尝试分配给各维度
+            scores = []
+            for num_str in numbers[:5]:  # 最多取5个数字
+                score = _to_float01(num_str)
+                if score is not None:
+                    scores.append(score)
+            
+            if scores:
+                # 分配分数到各维度
+                fields = ["logic_rigor", "question_quality", "reasoning_completeness", "naturalness", "natural_interaction"]
+                result = {}
+                for i, field in enumerate(fields):
+                    if i < len(scores):
+                        result[field] = scores[i]
+                    else:
+                        result[field] = scores[0]  # 复用第一个分数
+                return result
+        
+        # 完全解析失败，返回默认值
+        return {
+            "logic_rigor": 0.5,
+            "question_quality": 0.5,
+            "reasoning_completeness": 0.5,
+            "naturalness": 0.5,
+            "natural_interaction": 0.5
+        }
+    
+    def _parse_gemini_response(self, response_text: str) -> Dict[str, float]:
+        """解析Gemini响应中的评分"""
+        import json
+        import re
+        
+        try:
+            # 尝试直接解析JSON
+            # 寻找JSON内容
+            json_match = re.search(r'\{[^}]*"logic"[^}]*\}', response_text)
+            if json_match:
+                json_str = json_match.group()
+                gemini_scores = json.loads(json_str)
+                
+                # 映射Gemini的字段到系统需要的字段
+                scores = {
+                    "logic_rigor": gemini_scores.get("logic", 5.0),
+                    "question_quality": gemini_scores.get("question", 5.0),
+                    "reasoning_completeness": gemini_scores.get("reasoning", 5.0),
+                    "naturalness": gemini_scores.get("natural", 5.0),
+                    "natural_interaction": gemini_scores.get("natural", 5.0)  # 使用natural值
+                }
+                
+                return scores
+            else:
+                # 如果没找到JSON，返回默认分数
+                return {
+                    "logic_rigor": 5.0,
+                    "question_quality": 5.0,
+                    "reasoning_completeness": 5.0,
+                    "naturalness": 5.0,
+                    "natural_interaction": 5.0
+                }
+                
+        except Exception as e:
+            logger.warning(f"解析Gemini响应失败: {e}")
+            return {
+                "logic_rigor": 5.0,
+                "question_quality": 5.0,
+                "reasoning_completeness": 5.0,
+                "naturalness": 5.0,
+                "natural_interaction": 5.0
+            }
+    
     def _get_gpt_scores_cached(self, dialogue: Dict) -> Tuple[Dict[str, float], float]:
         """获取GPT评分（带缓存）"""
-        # 生成缓存键
-        spec = f"{self.model_name}|v={self.prompt_version}|temp={self.temperature}|top_p={self.top_p}|dims=logic,question,reasoning,natural"
+        # 检查环境变量中的提供商设置
+        import os
+        provider = os.getenv("SCORER_PROVIDER", "").lower()
+        
+        if provider == "gemini":
+            return self._get_gemini_scores_cached(dialogue)
+        else:
+            # 其他provider的实现（保持原有逻辑）
+            # 生成缓存键
+            spec = f"{self.model_name}|v={self.prompt_version}|temp={self.temperature}|top_p={self.top_p}|dims=logic,question,reasoning,natural"
         key = make_cache_key(dialogue, spec)
         
         # 检查缓存

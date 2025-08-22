@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # llama.cpp 环境搭建脚本
 # 适用于 Apple Silicon Mac
 
@@ -41,7 +42,7 @@ cd llama.cpp
 
 # 编译 llama.cpp (启用 Metal 支持)
 echo "🔨 编译 llama.cpp (启用 Metal 支持)..."
-make clean || true
+make clean
 make LLAMA_METAL=1 -j$(sysctl -n hw.ncpu)
 
 # 检查编译结果

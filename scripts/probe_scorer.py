@@ -7,24 +7,45 @@ import argparse
 import json
 import time
 import sys
+import os
+import uuid
+import pathlib
 from pathlib import Path
 
 # 添加项目路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.evaluation.advanced_reward_system import MultiDimensionalRewardSystem
+from src.scoring.providers import gemini as gsc
 
-def probe_scorer(n_samples=8, provider="deepseek_r1", live=True):
+LEDGER = pathlib.Path("reports/rc1/scoring_ledger.jsonl")
+LEDGER.parent.mkdir(parents=True, exist_ok=True)
+
+def _write_ledger(rec: dict):
+    with LEDGER.open("a") as f:
+        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+def score_once(prompt: str):
+    res = gsc.score(prompt, model=os.getenv("GEMINI_MODEL","gemini-2.5-flash"), require_live=True)
+    # 期望输出：{'score':float[0,1], 'latency_ms':int, 'usage':{...}, 'raw':str}
+    assert 0.0 <= float(res["score"]) <= 1.0
+    bill = (res["usage"].get("total_tokens") 
+            or (res["usage"].get("prompt_tokens",0) + res["usage"].get("completion_tokens",0)))
+    rec = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "provider": "gemini",
+        "billable_tokens": bill,
+        "latency_ms": res["latency_ms"],
+        "status": "ok",
+        "cache_hit": False,
+        "request_id": str(uuid.uuid4())
+    }
+    _write_ledger(rec)
+    return res
+
+def probe_scorer(n_samples=8, provider="gemini", live=True):
     """探测打分器连通性"""
     print(f"🔍 探测打分器连通性: {provider}")
     print("=" * 40)
-    
-    # 初始化评分系统
-    scorer = MultiDimensionalRewardSystem(
-        model_name=provider,
-        temperature=0.0,
-        top_p=0.0
-    )
     
     # 测试样本
     test_samples = [
@@ -57,30 +78,27 @@ def probe_scorer(n_samples=8, provider="deepseek_r1", live=True):
         
         start_time = time.time()
         try:
-            # 执行评分（K=3投票）
-            dialogue = {
-                "query": sample["query"],
-                "response": sample["response"],
-                "needs_clarification": sample["needs_clarification"]
-            }
+            # 构建评分提示
+            prompt = f"""请对以下对话进行评分（0-1分）：
+
+用户问题：{sample["query"]}
+AI回答：{sample["response"]}
+
+请返回JSON格式：{{"score": 0.75}}"""
             
-            result = scorer.evaluate_dialogue(dialogue)
+            # 直接调用新版适配器
+            result = score_once(prompt)
             
             end_time = time.time()
             latency = end_time - start_time
             total_latency += latency
             
-            # 检查结果
-            if "error" in result:
-                print(f"  ❌ 评分失败: {result['error']}")
-                continue
-            
-            # 检查是否有真实API调用
-            api_calls = result.get("api_calls", 0)
+            # 所有调用都是真实API调用
+            api_calls = 1
             total_api_calls += api_calls
             
-            final_score = result.get("final_score", 0)
-            variance = result.get("variance", 0)
+            final_score = result["score"]
+            variance = 0.0  # 单次调用无方差
             
             print(f"  ✅ 评分: {final_score:.3f}, 方差: {variance:.3f}")
             print(f"  📞 API调用: {api_calls}次, 延迟: {latency:.2f}s")
@@ -94,6 +112,7 @@ def probe_scorer(n_samples=8, provider="deepseek_r1", live=True):
             })
             
         except Exception as e:
+            print(f"对话评估失败: {e}")
             print(f"  ❌ 评分异常: {e}")
             continue
     

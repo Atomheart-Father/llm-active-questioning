@@ -17,10 +17,19 @@ def check_scorer_connectivity():
     
     # 检查API Key配置
     scorer_provider = os.getenv("SCORER_PROVIDER")
-    api_key = os.getenv("SCORER_API_KEY")
+    
+    # 根据提供商检查对应的API Key
+    if scorer_provider == "gemini":
+        api_key = os.getenv("GEMINI_API_KEY")
+        assert api_key, "❌ GEMINI_API_KEY未设置：拒绝dry-run"
+    elif scorer_provider == "deepseek_r1":
+        api_key = os.getenv("DEEPSEEK_API_KEY")
+        assert api_key, "❌ DEEPSEEK_API_KEY未设置：拒绝dry-run"
+    else:
+        api_key = os.getenv("SCORER_API_KEY")
+        assert api_key, "❌ SCORER_API_KEY未设置：拒绝dry-run"
     
     assert scorer_provider in {"deepseek_r1", "gemini", "gpt35"}, f"❌ 打分器未配置: {scorer_provider}"
-    assert api_key, "❌ SCORER_API_KEY未设置：拒绝dry-run"
     
     # 检查缓存数据库的真实使用情况
     cache_db = Path("gemini_cache.sqlite")

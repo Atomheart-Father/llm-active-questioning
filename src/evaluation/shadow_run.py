@@ -151,7 +151,14 @@ class ShadowRunEvaluator:
             with open(data_path, 'r', encoding='utf-8') as f:
                 for line in f:
                     if line.strip():
-                        samples.append(json.loads(line))
+                        raw_sample = json.loads(line)
+                        # 检查是否是HF格式（有source和task字段）
+                        if raw_sample.get("source") == "hf" and "task" in raw_sample:
+                            converted_sample = self._convert_hf_to_shadow_format(raw_sample)
+                            samples.append(converted_sample)
+                        else:
+                            # 兼容旧格式
+                            samples.append(raw_sample)
             
             if len(samples) == n:
                 return samples
@@ -170,6 +177,51 @@ class ShadowRunEvaluator:
         
         logger.info(f"样本数据已保存: {data_file}")
         return samples
+    
+    def _convert_hf_to_shadow_format(self, hf_sample: Dict[str, Any]) -> Dict[str, Any]:
+        """将HF格式转换为shadow格式"""
+        task_map = {
+            "hotpotqa": "multihop",
+            "strategyqa": "clarify", 
+            "gsm8k": "math"
+        }
+        
+        task_type = task_map.get(hf_sample["task"], "unknown")
+        question = hf_sample["question"]
+        answer = hf_sample["answer"]
+        
+        # 生成简单的AI回答
+        if task_type == "math":
+            ai_response = f"根据题目，计算结果为：{answer}"
+        elif task_type == "multihop":
+            ai_response = f"让我分步回答：{answer}"
+        elif task_type == "clarify":
+            if answer.lower() in ["yes", "true"]:
+                ai_response = "是的，这是正确的。"
+            else:
+                ai_response = "不，这个说法不正确。"
+        else:
+            ai_response = str(answer)
+        
+        return {
+            "id": hf_sample["id"],
+            "task_type": task_type,
+            "turns": [
+                {"role": "user", "content": question},
+                {"role": "assistant", "content": ai_response}
+            ],
+            "ground_truth": {
+                "correct_answer": answer,
+                "task_success": True,
+                "reasoning_steps": 1
+            },
+            "meta": {
+                "template_id": f"hf_{hf_sample['task']}",
+                "needs_clarification": task_type == "clarify",
+                "hf_dataset": hf_sample.get("hf_dataset"),
+                "source": "hf"
+            }
+        }
     
     def evaluate_with_old_system(self, sample: Dict[str, Any]) -> Dict[str, float]:
         """使用旧的7维评分系统"""
@@ -619,12 +671,23 @@ def main():
                 from collections import Counter
                 task_counts = Counter()
                 for sample in samples:
-                    task = sample.get('task', 'unknown')
+                    # 兼容不同格式：原HF格式使用'task'，shadow格式使用'task_type'
+                    task = sample.get('task_type', sample.get('task', 'unknown'))
                     task_counts[task] += 1
+                    
+                    # 提取问题：从turns中提取用户问题或直接使用question字段
+                    question = ""
+                    if 'turns' in sample and sample['turns']:
+                        user_turn = next((turn for turn in sample['turns'] if turn.get('role') == 'user'), None)
+                        if user_turn:
+                            question = user_turn.get('content', '')
+                    else:
+                        question = sample.get('question', '')
+                    
                     manifest['samples'].append({
                         'id': sample.get('id', ''),
                         'task': task,
-                        'question': sample.get('question', '')[:100] + '...' if len(sample.get('question', '')) > 100 else sample.get('question', '')
+                        'question': question[:100] + '...' if len(question) > 100 else question
                     })
                 
                 manifest['tasks'] = dict(task_counts)
