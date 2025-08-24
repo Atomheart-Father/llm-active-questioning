@@ -41,9 +41,9 @@ def check_scorer_connectivity():
         cursor.execute("""
             SELECT COUNT(*) as total, 
                    SUM(CASE WHEN tries > 0 THEN 1 ELSE 0 END) as real_calls,
-                   AVG(latency_ms) as avg_latency
-            FROM cache 
-            WHERE timestamp > datetime('now', '-1 hour')
+                   AVG(api_latency_ms) as avg_latency
+            FROM gemini_score_cache 
+            WHERE created_at > (strftime('%s', 'now') - 3600)
         """)
         result = cursor.fetchone()
         conn.close()
@@ -87,9 +87,9 @@ def check_training_data():
             task_type = sample.get("task_type", "unknown")
             if task_type in success_counts:
                 total_counts[task_type] += 1
-                # 模拟成功判断（实际应有具体逻辑）
-                if sample.get("success", False):
-                    success_counts[task_type] += 1
+                            # 从ground_truth.task_success获取成功状态
+            if sample.get("ground_truth", {}).get("task_success", False):
+                success_counts[task_type] += 1
         except:
             continue
     

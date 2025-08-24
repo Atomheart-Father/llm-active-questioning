@@ -1,0 +1,45 @@
+run:
+  seed: 20250823
+  output_dir: "checkpoints/local"
+  save_steps: 500
+  eval_steps: 1000
+  max_steps: 2000
+  mixed_precision: "fp16"         # MPS 使用 fp16
+  gradient_accumulation: 2
+  device_pref: ["mps","cpu"]
+  log_file: "logs/train.log"
+
+data:
+  train_path: "data/train_min.jsonl"
+  eval_path:  "data/eval_min.jsonl"
+  max_length: 1024
+  batch_size: 1
+  padding_side: "right"
+
+model:
+  base: "Qwen/Qwen3-4B-Thinking-2507"
+  trust_remote_code: true          # Qwen 系列通常需要
+  use_flash_attention_2: false     # MPS/CPU 关闭 FA2
+  use_cache: false                 # 训练时禁用 cache
+  gradient_checkpointing: true
+  lora:
+    enable: true
+    r: 8
+    alpha: 16
+    dropout: 0.05
+    target_modules: ["q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj"]
+
+engine:
+  name: "trl_ppo"
+  target_kl: 0.03
+  lr: 1.0e-5
+  clip_coef: 0.2
+  max_grad_norm: 1.0
+
+strategy:
+  name: "ppo"
+
+callbacks:
+  - "logging"
+  - "checkpoint"
+  - "eval_shadow"

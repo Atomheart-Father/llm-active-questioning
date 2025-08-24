@@ -1,0 +1,9 @@
+{"path": "/var/folders/r6/rzr5qd7917b1s8tgly5p61fr0000gn/T/tmp7mgxj3q8/test_ckpt", "step": 1000, "timestamp": "2025-08-23 15:00:00", "sha256": "954c9d1852200c388af018d44b327ea40a439d2888c80925b3e51061e331fe6a"}
+{"path": "/var/folders/r6/rzr5qd7917b1s8tgly5p61fr0000gn/T/tmpesqiknbw/test_ckpt", "step": 1000, "timestamp": "2025-08-23 15:00:00", "sha256": "954c9d1852200c388af018d44b327ea40a439d2888c80925b3e51061e331fe6a"}
+{"path": "/var/folders/r6/rzr5qd7917b1s8tgly5p61fr0000gn/T/tmpvqj7d0zl/test_ckpt", "step": 1000, "timestamp": "2025-08-23 15:00:00", "sha256": "954c9d1852200c388af018d44b327ea40a439d2888c80925b3e51061e331fe6a"}
+{"path": "checkpoints/local/step_000500", "step": 500, "timestamp": "2025-08-23 16:03:58", "sha256": "fe4b2ccadfe661c6d92a72d4733a89522e602e7d555d9d1cdc4d39f45ea831dc"}
+{"path": "checkpoints/local/step_001000", "step": 1000, "timestamp": "2025-08-23 16:08:24", "sha256": "ccdf05a42b402ef9ac0ccea6db8adf2a4a751c841b27caea9689b954a45116d6"}
+{"path": "checkpoints/local/step_000500", "step": 500, "timestamp": "2025-08-23 16:12:05", "sha256": "3eb6e0f96cd6d6468c3de7ecd5492d82e6c6b6ded77fc9204de89e9585ad7754"}
+{"path": "checkpoints/local/step_001000", "step": 1000, "timestamp": "2025-08-23 16:15:03", "sha256": "54033af7c2110021c7fe38394a959616f5b4eb5ddf70b7f16aa58109b45b8b77"}
+{"path": "checkpoints/local/step_001500", "step": 1500, "timestamp": "2025-08-23 16:17:59", "sha256": "dbd40b459be51ad83a885907bd5577b49553dda7aa4841880398e9f1cc45fc5e"}
+{"path": "checkpoints/local/step_001500", "step": 1500, "timestamp": "2025-08-23 16:21:42", "sha256": "5e19cca420ec102a95a11f11a9f6cf54afa4cbd955a97f48b7b130243d9693fc"}

@@ -141,32 +141,26 @@ class ShadowRunEvaluator:
         else:
             raise ValueError(f"未知任务类型: {task_type}")
     
-    def load_or_generate_sample_data(self, n: int, seed: int, data_file: str = "data/shadow_eval_245.jsonl") -> List[Dict[str, Any]]:
+    def load_or_generate_sample_data(self, n, seed):
         """加载或生成样本数据"""
-        data_path = Path(data_file)
+        materialize_path = "data/shadow_eval_245.jsonl"
+        data_path = Path(materialize_path)
         
         if data_path.exists():
-            logger.info(f"从文件加载样本: {data_file}")
-            samples = []
-            with open(data_path, 'r', encoding='utf-8') as f:
-                for line in f:
-                    if line.strip():
-                        raw_sample = json.loads(line)
-                        # 检查是否是HF格式（有source和task字段）
-                        if raw_sample.get("source") == "hf" and "task" in raw_sample:
-                            converted_sample = self._convert_hf_to_shadow_format(raw_sample)
-                            samples.append(converted_sample)
-                        else:
-                            # 兼容旧格式
-                            samples.append(raw_sample)
-            
-            if len(samples) == n:
-                return samples
-            else:
-                logger.warning(f"文件中样本数({len(samples)})与需求不符({n})，重新生成")
+            # 如果已存在且为 HF 数据，直接加载返回
+            try:
+                with open(data_path) as f:
+                    head=json.loads(next(iter(f)))
+                if head.get("source")=="hf":
+                    print("[shadow] using existing HF materialized file:", materialize_path)
+                    hf_samples = [json.loads(l) for l in open(data_path)]
+                    # 转换为shadow格式
+                    return [self._convert_hf_to_shadow_format(sample) for sample in hf_samples]
+            except StopIteration:
+                pass
         
-        # 生成新样本
-        logger.info(f"生成新的样本数据: {n}条")
+        # 否则再走旧逻辑（生成或从脚本读取）
+        logger.info(f"生成新的样本数据")
         samples = self.generate_stratified_sample(n, seed)
         
         # 保存到文件
@@ -175,7 +169,7 @@ class ShadowRunEvaluator:
             for sample in samples:
                 f.write(json.dumps(sample, ensure_ascii=False) + '\n')
         
-        logger.info(f"样本数据已保存: {data_file}")
+        logger.info(f"样本数据已保存: {materialize_path}")
         return samples
     
     def _convert_hf_to_shadow_format(self, hf_sample: Dict[str, Any]) -> Dict[str, Any]:

@@ -7,7 +7,24 @@ import argparse
 import json
 import sys
 import os
+import numpy as np
 from pathlib import Path
+
+# 在文件顶部或合适位置加入：
+def assert_distribution_health(scores, std_min=0.08, iqr_min=0.12):
+  arr=np.array([float(s) for s in scores], dtype=float)
+  std=float(arr.std())
+  q75,q25=np.percentile(arr,75),np.percentile(arr,25)
+  iqr=float(q75-q25)
+  assert std>=std_min and iqr>=iqr_min, f"score distribution too narrow: std={std:.3f}, iqr={iqr:.3f}"
+
+def assert_shadow_audit_present():
+  path="reports/rc1/shadow_data_audit.json"
+  assert os.path.exists(path), f"missing audit report: {path}"
+  rep=json.load(open(path))
+  keys=["mask_uniqueness","top_mask_ratio","jaccard_hi_ratio","mean_len","std_len","dup_ratio"]
+  assert all(k in rep for k in keys), "incomplete audit report"
+  print("[audit] ok:", {k:rep[k] for k in keys})
 
 def check_shadow_results(shadow_file, spearman_min, top10_min):
     """检查影子评估结果是否达到预跑门槛"""
@@ -40,6 +57,16 @@ def check_shadow_results(shadow_file, spearman_min, top10_min):
         spearman_pass = spearman >= spearman_min
         top10_pass = top10_overlap >= top10_min
         
+        # 获取评分分布进行健康检查
+        score_distribution = shadow_data.get("score_distribution", {})
+        new_scores = score_distribution.get("new_scores_normalized", {})
+        if new_scores and "values" in new_scores:
+            scores = new_scores["values"]
+            assert_distribution_health(scores)
+        elif "new_scores" in shadow_data:
+            scores = shadow_data["new_scores"]
+            assert_distribution_health(scores)
+        
         if spearman_pass and top10_pass:
             print("✅ 预跑检查通过")
             return True
@@ -57,7 +84,6 @@ def check_shadow_results(shadow_file, spearman_min, top10_min):
 
 def check_score_distribution_health(scores):
     """检查评分分布健康度"""
-    import numpy as np
     
     if len(scores) < 10:
         return False, "样本数量过少"
@@ -118,13 +144,7 @@ def main():
     print("=" * 40)
     
     # 0. 前置检查：数据审计
-    print("📋 检查数据审计...")
-    audit_passed, audit_msg = check_data_audit()
-    if not audit_passed:
-        print(f"❌ {audit_msg}")
-        sys.exit(1)
-    print(f"✅ {audit_msg}")
-    print()
+    assert_shadow_audit_present()
     
     # 检查影子评估文件是否存在
     if not Path(args.shadow).exists():
