@@ -13,16 +13,21 @@ import re
 import statistics
 from typing import Dict, Any, List, Tuple, Optional
 import logging
-
-# 导入评分凭证日志
+ 
+# --- logging wrapper: accept status or status_code ---
 try:
-    import sys
-    sys.path.append('.')
-    from scripts.scoring_ledger import log_api_call
-except ImportError:
-    # 如果导入失败，创建空函数
-    def log_api_call(*args, **kwargs):
-        pass
+    from src.utils.telemetry import log_api_call as _LOG_API
+except Exception:
+    def _LOG_API(**kwargs):  # fallback no-op
+        return None
+
+def log_api_call(**kwargs):
+    status = kwargs.pop("status", None)
+    if status is not None and "status_code" not in kwargs:
+        kwargs["status_code"] = status
+    allow = {"provider","model","latency_ms","ok","error","status_code","meta"}
+    filtered = {k: v for k, v in kwargs.items() if k in allow}
+    return _LOG_API(**filtered)
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
