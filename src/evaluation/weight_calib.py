@@ -56,7 +56,21 @@ class WeightCalibrator:
     
     def load_shadow_run_data(self, shadow_file: str = "reports/shadow_run_20250820.json") -> pd.DataFrame:
         """加载shadow run数据"""
-        with open(shadow_file, 'r', encoding='utf-8') as f:
+        # 解析shadow文件路径
+        from glob import glob
+        import os
+        
+        def resolve_shadow_file(p):
+            if p and p != "latest":
+                return p
+            files = sorted(glob("reports/shadow_run_*.json"), key=os.path.getmtime)
+            if not files:
+                raise FileNotFoundError("No shadow_run_*.json under reports/")
+            return files[-1]
+        
+        # 使用解析后的路径
+        resolved_file = resolve_shadow_file(shadow_file)
+        with open(resolved_file, 'r', encoding='utf-8') as f:
             shadow_data = json.load(f)
         
         # 从诊断信息中重建DataFrame
@@ -431,7 +445,7 @@ class WeightCalibrator:
         np.random.seed(seed)
         
         # 1. 加载数据
-        df = self.load_shadow_run_data()
+        df = self.load_shadow_run_data(args.shadow_file)
         
         # 2. 准备特征和标签
         X, y, feature_columns, work_df = self.prepare_features_and_labels(df)
@@ -562,6 +576,7 @@ def main():
     parser.add_argument("--l2", type=float, default=0.1, help="L2正则化强度")
     parser.add_argument("--seed", type=int, default=42, help="随机种子")
     parser.add_argument("--config", default="configs/default_config.yaml", help="配置文件路径")
+    parser.add_argument("--shadow_file", default="latest", help="path to report or 'latest'")
     parser.add_argument("--output", help="输出文件路径")
     
     args = parser.parse_args()
