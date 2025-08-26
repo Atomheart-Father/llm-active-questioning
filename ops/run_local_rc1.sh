@@ -64,7 +64,7 @@ PY
 python scripts/probe_scorer.py --n 8 --provider "$SCORER_PROVIDER" --live
 
 # 4.2 防伪：缓存命中率首轮必须 < 90%
-python scripts/assert_not_simulated.py --cache_hit_lt 0.90
+python scripts/assert_not_simulated.py --cache_hit_lt 0.90 --min_eval_n 50
 
 # ============ 5. 影子评测集物化 ============
 python -m src.evaluation.shadow_run --n 245 --seed 20250820 --stratify \
@@ -150,7 +150,7 @@ PY
 
 # ============ 11. Round 2 复核（更接近实战口径） ============
 # 11.1 防伪：缓存命中阈值放宽到 <95%
-python scripts/assert_not_simulated.py --cache_hit_lt 0.95
+python scripts/assert_not_simulated.py --cache_hit_lt 0.95 --min_eval_n 50
 
 # 11.2 以当前权重/惩罚口径再跑一次影子检查（带 tag）
 python -m src.evaluation.shadow_run --n 245 --seed 20250820 --stratify --tag "pre_run_check"
