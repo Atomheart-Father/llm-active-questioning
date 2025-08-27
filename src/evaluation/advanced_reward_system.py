@@ -13,6 +13,7 @@ import re
 import statistics
 from typing import Dict, Any, List, Tuple, Optional
 import logging
+import os, json, hashlib
  
 # --- logging wrapper: accept status or status_code ---
 try:
@@ -31,6 +32,32 @@ def log_api_call(**kwargs):
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+def _read_sha12(p):
+    h = hashlib.sha256(open(p, 'rb').read()).hexdigest()
+    return h[:12]
+
+def _normalize(ws):
+    s = sum(ws.values())
+    if s <= 0 or any(v < 0 for v in ws.values()):
+        raise ValueError("invalid weights")
+    return {k: (v / s) for k, v in ws.items()}
+
+def _maybe_load_calibrated(self, path="configs/weights.json"):
+    if os.getenv("USE_CALIBRATED_WEIGHTS", "1") != "1":
+        return
+    if not os.path.exists(path):
+        print(f"[reward] calibrated weights not found: {path}")
+        return
+    try:
+        ws = json.load(open(path)).get("weights", {})
+        ws = _normalize(ws)
+        self.weights = ws
+        self.weights_source = path
+        self.weights_sha = _read_sha12(path)
+        print(f"[reward] using calibrated weights sha={self.weights_sha}")
+    except Exception as e:
+        print(f"[reward] keep default weights (reason: {e})")
 
 def canonical_json(obj: Dict) -> str:
     """生成标准化JSON字符串"""
@@ -515,6 +542,11 @@ class MultiDimensionalRewardSystem:
             "reasoning_completeness": 0.20,
             "natural_interaction": 0.12
         }
+        self.weights_source = None
+        self.weights_sha = None
+
+        # 尝试加载校准权重
+        _maybe_load_calibrated(self)
         
         logger.info(f"MultiDimensionalRewardSystem initialized with {model_name}")
     
