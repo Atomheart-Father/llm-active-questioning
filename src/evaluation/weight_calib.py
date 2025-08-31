@@ -192,10 +192,14 @@ class WeightCalibrator:
         # 尝试从现有weights.json读取
         weights_file = Path("configs/weights.json")
         if weights_file.exists():
-            with open(weights_file, 'r', encoding='utf-8') as f:
-                weights_data = json.load(f)
-            
-            prior_dict = weights_data.get("weights", {})
+            try:
+                from .weights_loader import load_weights
+                prior_dict = load_weights(str(weights_file))
+            except Exception:
+                # Fallback to old format
+                with open(weights_file, 'r', encoding='utf-8') as f:
+                    weights_data = json.load(f)
+                prior_dict = weights_data.get("weights", {}) if isinstance(weights_data, dict) else {}
             w_prior = []
             for col in feature_columns:
                 # 映射字段名
@@ -432,8 +436,8 @@ class WeightCalibrator:
         
         return diagnostics
     
-    def calibrate_weights(self, cv: int = 5, boot: int = 200, l2: float = 0.1, 
-                         seed: int = 42) -> Dict[str, Any]:
+    def calibrate_weights(self, cv: int = 5, boot: int = 200, l2: float = 0.1,
+                         seed: int = 42, shadow_file: str = "latest") -> Dict[str, Any]:
         """主校准流程"""
         logger.info("开始权重校准...")
         
@@ -445,7 +449,7 @@ class WeightCalibrator:
         np.random.seed(seed)
         
         # 1. 加载数据
-        df = self.load_shadow_run_data(args.shadow_file)
+        df = self.load_shadow_run_data(shadow_file)
         
         # 2. 准备特征和标签
         X, y, feature_columns, work_df = self.prepare_features_and_labels(df)
@@ -589,7 +593,7 @@ def main():
         calibrator = WeightCalibrator(args.config)
         
         # 执行校准
-        result = calibrator.calibrate_weights(args.cv, args.boot, args.l2, args.seed)
+        result = calibrator.calibrate_weights(args.cv, args.boot, args.l2, args.seed, args.shadow_file)
         
         # 检查门槛
         threshold_checks = calibrator.check_thresholds(result)
