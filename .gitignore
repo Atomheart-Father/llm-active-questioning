@@ -183,3 +183,5 @@ tmp/
 
 # Hugging Face cache
 .cache/huggingface/
+# Documentation files
+*.pdf
