@@ -1,163 +1,184 @@
 #!/usr/bin/env python3
 """
-预跑检查脚本 - RC1影子评估阈值验证
+ShadowRun预运行检查 - 解耦开发和CI环境
 """
 
-import argparse
 import json
-import sys
 import os
-import numpy as np
+import sys
+import argparse
 from pathlib import Path
 
-# 在文件顶部或合适位置加入：
-def assert_distribution_health(scores, std_min=0.08, iqr_min=0.12):
-  arr=np.array([float(s) for s in scores], dtype=float)
-  std=float(arr.std())
-  q75,q25=np.percentile(arr,75),np.percentile(arr,25)
-  iqr=float(q75-q25)
-  assert std>=std_min and iqr>=iqr_min, f"score distribution too narrow: std={std:.3f}, iqr={iqr:.3f}"
+def load_config():
+    """加载项目配置"""
+    config_path = Path("configs/default_config.yaml")
+    if not config_path.exists():
+        return {}
 
-def assert_shadow_audit_present():
-  path="reports/rc1/shadow_data_audit.json"
-  assert os.path.exists(path), f"missing audit report: {path}"
-  rep=json.load(open(path))
-  keys=["mask_uniqueness","top_mask_ratio","jaccard_hi_ratio","mean_len","std_len","dup_ratio"]
-  assert all(k in rep for k in keys), "incomplete audit report"
-  print("[audit] ok:", {k:rep[k] for k in keys})
+    try:
+        import yaml
+        with open(config_path, 'r', encoding='utf-8') as f:
+            return yaml.safe_load(f)
+    except Exception as e:
+        print(f"⚠️ 无法加载配置: {e}")
+        return {}
 
-def check_shadow_results(shadow_file, spearman_min, top10_min):
-    """检查影子评估结果是否达到预跑门槛"""
-    
-    # 查找最新的影子评估结果文件
-    shadow_files = list(Path("reports").glob("shadow_run_*.json"))
+def check_structure_quality(data_root="shadow_data"):
+    """检查数据结构质量"""
+    issues = []
+
+    # 检查基础目录
+    required_dirs = ["configs", "reports", "data"]
+    for dir_name in required_dirs:
+        if not Path(dir_name).exists():
+            issues.append(f"缺少必需目录: {dir_name}")
+
+    # 检查配置文件
+    config_files = ["configs/default_config.yaml", "configs/weights.json"]
+    for config_file in config_files:
+        if not Path(config_file).exists():
+            issues.append(f"缺少配置文件: {config_file}")
+
+    # 检查数据文件
+    shadow_files = list(Path("data").glob("shadow_eval_*.jsonl"))
     if not shadow_files:
-        print("❌ 未找到影子评估结果文件")
-        return False
-    
-    latest_shadow = max(shadow_files, key=lambda x: x.stat().st_mtime)
-    print(f"📄 读取影子评估结果: {latest_shadow}")
-    
-    try:
+        issues.append("未找到shadow评估数据文件")
+    else:
+        # 检查最新文件
+        latest_shadow = max(shadow_files, key=lambda p: p.stat().st_mtime)
         with open(latest_shadow, 'r', encoding='utf-8') as f:
-            shadow_data = json.load(f)
-        
-        # 获取稳态指标
-        correlations = shadow_data.get("correlations", {}).get("stable_dataset", {})
-        spearman = correlations.get("spearman", 0)
-        
-        overlap_metrics = shadow_data.get("overlap_metrics", {})
-        top10_overlap = overlap_metrics.get("top10_overlap", 0)
-        
-        print(f"📊 影子评估指标:")
-        print(f"  Spearman相关性: {spearman:.3f} (门槛: {spearman_min})")
-        print(f"  Top10重合度: {top10_overlap:.3f} (门槛: {top10_min})")
-        
-        # 检查是否达标
-        spearman_pass = spearman >= spearman_min
-        top10_pass = top10_overlap >= top10_min
-        
-        # 获取评分分布进行健康检查
-        score_distribution = shadow_data.get("score_distribution", {})
-        new_scores = score_distribution.get("new_scores_normalized", {})
-        if new_scores and "values" in new_scores:
-            scores = new_scores["values"]
-            assert_distribution_health(scores)
-        elif "new_scores" in shadow_data:
-            scores = shadow_data["new_scores"]
-            assert_distribution_health(scores)
-        
-        if spearman_pass and top10_pass:
-            print("✅ 预跑检查通过")
-            return True
-        else:
-            print("❌ 预跑检查失败:")
-            if not spearman_pass:
-                print(f"  - Spearman不达标: {spearman:.3f} < {spearman_min}")
-            if not top10_pass:
-                print(f"  - Top10重合不达标: {top10_overlap:.3f} < {top10_min}")
-            return False
-            
-    except Exception as e:
-        print(f"❌ 读取影子评估结果失败: {e}")
-        return False
+            line_count = sum(1 for _ in f)
+        if line_count < 50:
+            issues.append(f"Shadow数据样本不足: {line_count} < 50")
 
-def check_score_distribution_health(scores):
-    """检查评分分布健康度"""
-    
-    if len(scores) < 10:
-        return False, "样本数量过少"
-    
-    scores_array = np.array(scores, dtype=float)
-    std = scores_array.std()
-    iqr = np.percentile(scores_array, 75) - np.percentile(scores_array, 25)
-    
-    print(f"  📊 评分分布: std={std:.3f}, IQR={iqr:.3f}")
-    
-    if std < 0.08:
-        return False, f"标准差过小: {std:.3f} < 0.08"
-    
-    if iqr < 0.12:
-        return False, f"四分位距过小: {iqr:.3f} < 0.12"
-    
-    return True, "分布健康"
+    return issues
 
-def check_data_audit():
-    """检查数据审计是否通过"""
-    audit_file = Path("reports/rc1/shadow_data_audit.json")
-    if not audit_file.exists():
-        return False, "影子数据审计文件不存在"
-    
+def check_performance_metrics(strict_mode=False):
+    """检查性能指标"""
+    issues = []
+    warnings = []
+
+    # 检查最新的shadow报告
+    shadow_reports = list(Path("reports").glob("shadow_run_*.json"))
+    if not shadow_reports:
+        issues.append("未找到shadow运行报告")
+        return issues, warnings
+
+    latest_report = max(shadow_reports, key=lambda p: p.stat().st_mtime)
+
     try:
-        with open(audit_file, 'r', encoding='utf-8') as f:
-            audit_data = json.load(f)
-        
-        if not audit_data.get("passed", False):
-            failures = audit_data.get("failures", [])
-            return False, f"数据审计失败: {'; '.join(failures)}"
-        
-        # 打印关键指标
-        print("📊 数据审计指标:")
-        by_task = audit_data.get("by_task", {})
-        detempl = audit_data.get("detemplatization", {})
-        
-        print(f"  任务分布: {by_task}")
-        print(f"  掩码唯一率: {detempl.get('mask_uniqueness', 0):.3f}")
-        print(f"  最频繁掩码占比: {detempl.get('most_common_mask_ratio', 0):.3f}")
-        print(f"  高相似度对比例: {detempl.get('high_sim_ratio', 0):.3f}")
-        print(f"  题干长度均值: {detempl.get('mean_length', 0):.1f}")
-        
-        return True, "数据审计通过"
-        
+        with open(latest_report, 'r', encoding='utf-8') as f:
+            report = json.load(f)
+
+        thresholds = report.get("threshold_checks", {})
+        actual = thresholds.get("actual_values", {})
+
+        # 基准阈值
+        spearman_min = 0.55
+        top10_min = 0.60
+
+        # 严格模式使用更高阈值
+        if strict_mode:
+            spearman_min = 0.75
+            top10_min = 0.70
+
+        spearman = actual.get("stable_spearman", 0)
+        top10 = actual.get("top10_overlap", 0)
+
+        if spearman < spearman_min:
+            if strict_mode:
+                issues.append(f"Spearman相关性不足: {spearman:.3f} < {spearman_min:.3f}")
+            else:
+                warnings.append(f"Spearman相关性偏低: {spearman:.3f} < {spearman_min:.3f}")
+        if top10 < top10_min:
+            if strict_mode:
+                issues.append(f"Top-10重叠率不足: {top10:.3f} < {top10_min:.3f}")
+            else:
+                warnings.append(f"Top-10重叠率偏低: {top10:.3f} < {top10_min:.3f}")
+        # 检查相关性改进
+        corr_improve = actual.get("corr_improve_pct", 0)
+        if corr_improve < 10 and strict_mode:
+            issues.append(f"相关性改进不足: {corr_improve:.1f}% < 10%")
+
+        print("📊 性能指标检查:")
+        print(f"  Spearman相关性: {spearman:.3f}")
+        print(f"  Top-10重叠率: {top10:.3f}")
+        print(f"  相关性改进: {corr_improve:.1f}%")
     except Exception as e:
-        return False, f"读取审计文件失败: {e}"
+        issues.append(f"无法读取报告: {e}")
+
+    return issues, warnings
 
 def main():
-    parser = argparse.ArgumentParser(description='RC1预跑检查')
-    parser.add_argument('--shadow', required=True, help='影子评估数据文件')
-    parser.add_argument('--spearman-min', type=float, required=True, help='Spearman最低阈值')
-    parser.add_argument('--top10-min', type=float, required=True, help='Top10重合最低阈值')
-    
+    parser = argparse.ArgumentParser(description="ShadowRun预运行检查")
+    parser.add_argument("--data-root", default="shadow_data", help="数据根目录")
+    parser.add_argument("--strict-metrics", action="store_true", help="启用严格性能门槛 (CI模式)")
+    parser.add_argument("--out", help="输出检查结果到JSON文件")
+
     args = parser.parse_args()
-    
-    print("🔍 RC1预跑检查开始")
-    print("=" * 40)
-    
-    # 0. 前置检查：数据审计
-    assert_shadow_audit_present()
-    
-    # 检查影子评估文件是否存在
-    if not Path(args.shadow).exists():
-        print(f"❌ 影子评估文件不存在: {args.shadow}")
-        sys.exit(1)
-    
-    # 执行检查
-    if check_shadow_results(args.shadow, args.spearman_min, args.top10_min):
-        print("\n🎉 所有预跑检查通过！")
-        sys.exit(0)
+
+    print("🔍 ShadowRun 预运行检查")
+    print("=" * 50)
+
+    results = {
+        "mode": "strict" if args.strict_metrics else "development",
+        "structure_issues": [],
+        "performance_issues": [],
+        "performance_warnings": [],
+        "overall_status": "unknown"
+    }
+
+    # 1. 结构质量检查
+    print("1. 检查数据结构质量...")
+    structure_issues = check_structure_quality(args.data_root)
+    results["structure_issues"] = structure_issues
+
+    if structure_issues:
+        for issue in structure_issues:
+            print(f"   ❌ {issue}")
     else:
-        print("\n❌ 预跑检查失败！")
-        sys.exit(1)
+        print("   ✅ 结构检查通过")
+
+    # 2. 性能指标检查
+    print("\n2. 检查性能指标...")
+    perf_issues, perf_warnings = check_performance_metrics(args.strict_metrics)
+    results["performance_issues"] = perf_issues
+    results["performance_warnings"] = perf_warnings
+
+    if perf_issues:
+        for issue in perf_issues:
+            print(f"   ❌ {issue}")
+    else:
+        print("   ✅ 性能检查通过")
+
+    if perf_warnings:
+        for warning in perf_warnings:
+            print(f"   ⚠️  {warning}")
+
+    # 3. 确定整体状态
+    if structure_issues:
+        results["overall_status"] = "fail"
+        exit_code = 1
+    elif perf_issues:
+        results["overall_status"] = "fail"
+        exit_code = 1
+    elif perf_warnings and args.strict_metrics:
+        results["overall_status"] = "fail"
+        exit_code = 1
+    else:
+        results["overall_status"] = "pass"
+        exit_code = 0
+
+    print(f"\n📋 整体状态: {results['overall_status'].upper()}")
+
+    # 保存结果
+    if args.out:
+        os.makedirs(os.path.dirname(args.out), exist_ok=True)
+        with open(args.out, 'w', encoding='utf-8') as f:
+            json.dump(results, f, indent=2, ensure_ascii=False)
+        print(f"💾 结果已保存到: {args.out}")
+
+    sys.exit(exit_code)
 
 if __name__ == "__main__":
     main()

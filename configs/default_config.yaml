@@ -62,16 +62,26 @@ training:
 
 # 奖励计算配置
 reward:
+  # 规则门控机制
+  rules_gate:
+    enabled: true
+    min_score: 0.60     # 不达标即一票否决
+    penalty: 0.0        # 直接判0分
+
+  # 加权融合配置
+  fusion:
+    weights_file: "configs/weights.json"
+
   gpt4_evaluation:
     enabled: true
     batch_size: 10  # 批量评估以降低API调用成本
     cache_results: true
-  
+
   correctness_metrics:
     - "exact_match"
-    - "f1_score" 
+    - "f1_score"
     - "bleu"
-  
+
   safety_keywords:
     - "harmful"
     - "offensive"
