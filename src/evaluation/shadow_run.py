@@ -24,6 +24,16 @@ from src.evaluation.diversity_metrics import DiversityMetrics
 
 logger = logging.getLogger(__name__)
 
+def _load_manifest(p):
+    """Load manifest file as JSONL"""
+    import json, os
+    if not p:
+        return None
+    if not os.path.exists(p):
+        raise FileNotFoundError(f"manifest not found: {p}")
+    with open(p, "r", encoding="utf-8") as f:
+        return [json.loads(line) for line in f if line.strip()]
+
 class ShadowRunEvaluator:
     """影子运行评估器"""
     
@@ -318,12 +328,17 @@ class ShadowRunEvaluator:
         else:
             return 0
     
-    def run_shadow_evaluation(self, n: int = 245, seed: int = 20250820, stratify: bool = True) -> Dict[str, Any]:
+    def run_shadow_evaluation(self, n: int = 245, seed: int = 20250820, stratify: bool = True, manifest_path: str = "") -> Dict[str, Any]:
         """执行影子运行评估"""
         logger.info(f"开始影子运行评估: n={n}, seed={seed}, stratify={stratify}")
         
         # 1. 加载或生成样本
-        samples = self.load_or_generate_sample_data(n, seed)
+        samples = _load_manifest(manifest_path)
+        if samples is not None:
+            print(f"[data] mode=manifest file={manifest_path} n={len(samples)}")
+        else:
+            print(f"[data] mode=synthetic (FALLBACK) n={n} use --manifest to enable real data")
+            samples = self.load_or_generate_sample_data(n, seed)
         
         # 2. 并行评估 - 使用DataFrame确保对齐
         import pandas as pd
@@ -621,6 +636,7 @@ def main():
     parser.add_argument("--output", help="输出文件路径")
     parser.add_argument("--materialize", help="物化样本到指定文件")
     parser.add_argument("--dump-manifest", dest="dump_manifest", help="输出样本清单到指定文件")
+    parser.add_argument("--manifest", default="", help="JSONL file of materialized eval samples")
     parser.add_argument("--tag", default="shadow_run", help="运行标签")
     
     args = parser.parse_args()
@@ -695,7 +711,7 @@ def main():
                 logger.info(f"样本清单保存到: {manifest_path}")
         
         # 执行评估
-        result = evaluator.run_shadow_evaluation(args.n, args.seed, args.stratify)
+        result = evaluator.run_shadow_evaluation(args.n, args.seed, args.stratify, args.manifest)
         
         # 检查门槛
         threshold_checks = evaluator.check_thresholds(result)
