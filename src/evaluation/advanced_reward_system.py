@@ -50,8 +50,9 @@ def _maybe_load_calibrated(self, path="configs/weights.json"):
         print(f"[reward] calibrated weights not found: {path}")
         return
     try:
-        ws = json.load(open(path)).get("weights", {})
-        ws = _normalize(ws)
+        # Use the new weights loader for compatibility
+        from .weights_loader import load_weights
+        ws = load_weights(path)
         self.weights = ws
         self.weights_source = path
         self.weights_sha = _read_sha12(path)
