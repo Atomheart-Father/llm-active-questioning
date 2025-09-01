@@ -523,18 +523,32 @@ class MultiDimensionalRewardSystem:
     结合硬规则和GPT评分的混合奖励系统
     """
     
-    def __init__(self, model_name="gemini-2.5-pro", prompt_version="v1", 
-                 temperature=0.0, top_p=0.0, cache_db="gemini_cache.sqlite"):
+    def __init__(self, model_name="gemini-2.5-pro", prompt_version="v1",
+                 temperature=0.0, top_p=0.0, cache_db="gemini_cache.sqlite",
+                 config_path="configs/default_config.yaml"):
         self.model_name = model_name
         self.prompt_version = prompt_version
         self.temperature = temperature
         self.top_p = top_p
-        
+
+        # 加载配置
+        try:
+            import yaml
+            with open(config_path, 'r', encoding='utf-8') as f:
+                self.config = yaml.safe_load(f)
+        except Exception as e:
+            logger.warning(f"无法加载配置文件 {config_path}: {e}")
+            self.config = {}
+
+        # 加载规则门控配置
+        self.rules_gate_config = self.config.get("reward", {}).get("rules_gate", {})
+        self.fusion_config = self.config.get("reward", {}).get("fusion", {})
+
         # 初始化组件
         self.cache = GeminiCache(cache_db)
         self.hard_evaluator = HardRuleEvaluator()
         self.gpt_evaluator = GeminiEvaluator(model_name, prompt_version, temperature, top_p)
-        
+
         # 初始权重（30%硬规则 + 70%GPT评分）
         self.weights = {
             "rules": 0.30,
@@ -548,8 +562,9 @@ class MultiDimensionalRewardSystem:
 
         # 尝试加载校准权重
         _maybe_load_calibrated(self)
-        
+
         logger.info(f"MultiDimensionalRewardSystem initialized with {model_name}")
+        logger.info(f"Rules gate: {self.rules_gate_config.get('enabled', False)} (min_score={self.rules_gate_config.get('min_score', 0.6)})")
     
     def evaluate_dialogue(self, dialogue: Dict) -> Dict[str, Any]:
         """评估对话并返回多维度奖励"""
@@ -589,9 +604,21 @@ class MultiDimensionalRewardSystem:
             with open("reports/rc1/scoring_ledger.jsonl", "a") as f:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
             
-            # 计算主奖励
-            primary_reward = self._calculate_primary_reward(hard_results, gpt_scores)
-            
+            # 检查规则门控
+            gate_triggered = False
+            if self.rules_gate_config.get("enabled", False):
+                rules_score = hard_results["rules_score"]
+                min_score = self.rules_gate_config.get("min_score", 0.60)
+                if rules_score < min_score:
+                    gate_triggered = True
+                    penalty_score = self.rules_gate_config.get("penalty", 0.0)
+                    logger.info(f"Rules gate triggered: {rules_score:.3f} < {min_score:.3f}, penalty={penalty_score}")
+                    primary_reward = penalty_score
+                else:
+                    primary_reward = self._calculate_primary_reward(hard_results, gpt_scores)
+            else:
+                primary_reward = self._calculate_primary_reward(hard_results, gpt_scores)
+
             # 构建完整结果
             result = {
                 "primary_reward": round(primary_reward, 4),
@@ -610,7 +637,9 @@ class MultiDimensionalRewardSystem:
                     "variance": round(variance, 4),
                     "weights_used": self.weights.copy(),
                     "model": self.model_name,
-                    "version": self.prompt_version
+                    "version": self.prompt_version,
+                    "rules_gate_triggered": gate_triggered,
+                    "rules_gate_config": self.rules_gate_config
                 }
             }
             
