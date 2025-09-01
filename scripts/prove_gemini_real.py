@@ -24,7 +24,8 @@ def test_gemini_connection():
         latency = time.time() - start_time
 
         if result.get("success"):
-            print(".1f"            print(f"   状态码: {result.get('status_code', 'unknown')}")
+            print(f"   延迟: {latency:.1f}ms")
+            print(f"   状态码: {result.get('status_code', 'unknown')}")
             print(f"   请求ID: {result.get('request_id', 'unknown')}")
 
             # 记录到账本
@@ -120,7 +121,7 @@ def dump_router_snapshot():
     with open("artifacts/router_dump.json", "w") as f:
         json.dump(snapshot, f, indent=2, ensure_ascii=False)
 
-    print("   ✅ 路由器快照已保存: artifacts/router_dump.json"
+    print("   ✅ 路由器快照已保存: artifacts/router_dump.json")
     print(f"   配置提供商: {scorer_provider}")
     print(f"   只允许Gemini: {scorer_provider == 'gemini'}")
 
@@ -158,7 +159,8 @@ def main():
     results["router_snapshot"] = router_snapshot
 
     # 4. 总体评估
-    print("\n📋 测试结果汇总:"    print(f"   正例测试: {'✅ 通过' if positive_success else '❌ 失败'}")
+    print("\n📋 测试结果汇总:")
+    print(f"   正例测试: {'✅ 通过' if positive_success else '❌ 失败'}")
     print(f"   负例测试: {'✅ 通过' if results['negative_test'] == True else '⚠️ 跳过' if results['negative_test'] == 'skipped' else '❌ 失败'}")
     print(f"   路由器配置: {'✅ 只允许Gemini' if router_snapshot['scorer_provider'] == 'gemini' else '❌ 配置异常'}")
 
@@ -178,7 +180,7 @@ def main():
     with open("artifacts/gemini_connection_test.json", "w") as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
 
-    print("💾 完整结果已保存到: artifacts/gemini_connection_test.json"
+    print("💾 完整结果已保存到: artifacts/gemini_connection_test.json")
     exit(0 if results["overall_status"] == "pass" else 1)
 
 if __name__ == "__main__":
