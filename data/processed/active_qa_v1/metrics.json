@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-09-02T18:04:02.347548",
+  "timestamp": "2025-09-02T18:16:32.353505",
   "total_samples": 100,
   "field_completeness": {
     "field_completeness": {
@@ -70,9 +70,9 @@
   },
   "task_type_enum": {
     "valid_task_types": [
-      "ambiguous",
+      "multihop",
       "math",
-      "multihop"
+      "ambiguous"
     ],
     "invalid_count": 0,
     "invalid_samples": []
@@ -105,5 +105,10 @@
     "duplicate_groups": 0,
     "singleton_groups": 100,
     "duplicate_details": {}
+  },
+  "alignment_stats": {
+    "alignment_ok_count": 100,
+    "alignment_error_count": 0,
+    "alignment_ok_percentage": 100.0
   }
 }
