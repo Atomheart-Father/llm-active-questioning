@@ -121,6 +121,28 @@
 
 ---
 
+## 指标与审计命名规范
+
+### 主指标文件
+- **路径**: `data/processed/active_qa_v1/metrics.json`
+- **作用**: 累计所有shard的总计指标
+- **必含字段**:
+  - `total_samples`: 总样本数
+  - `near_duplicates.duplicate_ratio`: 近重复率
+  - `alignment_stats.{alignment_ok_count, alignment_error_count, alignment_ok_percentage}`: 对齐统计
+
+### 分片指标文件
+- **命名模式**: `data/processed/active_qa_v1/metrics_shard_{XXX}.json`
+- **示例**: `metrics_shard_000.json`, `metrics_shard_001.json`, `metrics_shard_002.json`
+- **作用**: 各分片的独立质量指标
+
+### 审计文件
+- **命名模式**: `data/processed/active_qa_v1/audit/sampling_review_{XXX}.md`
+- **示例**: `sampling_review_000.md`, `sampling_review_001.md`, `sampling_review_002.md`
+- **作用**: 各分片的抽样审计报告
+
+---
+
 ## 自动质检规则 v1
 
 TODO: 待补充
