@@ -7,10 +7,10 @@
 #### 1. AmbigQA（歧义问答）
 - **Hugging Face ID**: `sewon/ambig_qa` (light config)
 - **描述**: 歧义问题数据集，包含需要澄清的模糊问题
-- **许可**: CC-BY-SA-4.0
+- **许可**: CC BY-SA 3.0
 - **来源URL**: https://huggingface.co/datasets/sewon/ambig_qa
 - **后备下载**: https://nlp.cs.washington.edu/ambigqa/ (UW官方页面)
-- **字段结构**: `id`, `question`, `annotations`, `nq_answer`, `aq_answers`, `disambiguations`
+- **字段结构**: `id`, `question`, `annotations` (light配置)
 - **当前使用**: 200条样本，已保存至 `data/raw/ambigqa/20250902/ambigqa_200.jsonl`
 
 #### 2. GSM8K（数学推理）
@@ -55,6 +55,9 @@
 - `url_or_path`: Hugging Face路径或URL
 - `license`: 许可信息
 - `created_at`: 创建时间戳
+- `dataset_hf_id`: Hugging Face数据集ID（如`sewon/ambig_qa`）
+- `source_config`: 数据集配置（如`light`, `full`）
+- `split`: 数据分割（如`train`, `validation`）
 
 ---
 

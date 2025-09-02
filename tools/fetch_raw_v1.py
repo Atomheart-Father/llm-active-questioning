@@ -93,10 +93,7 @@ class RawDataFetcher:
                 sample = {
                     "id": item.get("id", f"ambigqa_{i}"),
                     "question": item.get("question", ""),
-                    "annotations": item.get("annotations", {}),
-                    "nq_answer": item.get("nq_answer", ""),
-                    "aq_answers": item.get("aq_answers", []),
-                    "disambiguations": item.get("disambiguations", [])
+                    "annotations": item.get("annotations", {})
                 }
                 samples.append(sample)
 
