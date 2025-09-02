@@ -1,0 +1,111 @@
+{
+  "timestamp": "2025-09-02T20:46:32.051286",
+  "total_samples": 100,
+  "field_completeness": {
+    "field_completeness": {
+      "uid": {
+        "present": 100,
+        "missing": 0,
+        "percentage": 100.0
+      },
+      "user_query": {
+        "present": 100,
+        "missing": 0,
+        "percentage": 100.0
+      },
+      "needs_clarification": {
+        "present": 100,
+        "missing": 0,
+        "percentage": 100.0
+      },
+      "clarification_questions": {
+        "present": 100,
+        "missing": 0,
+        "percentage": 100.0
+      },
+      "provided_context": {
+        "present": 100,
+        "missing": 0,
+        "percentage": 100.0
+      },
+      "assistant_response": {
+        "present": 100,
+        "missing": 0,
+        "percentage": 100.0
+      },
+      "task_type": {
+        "present": 100,
+        "missing": 0,
+        "percentage": 100.0
+      },
+      "source": {
+        "present": 100,
+        "missing": 0,
+        "percentage": 100.0
+      },
+      "licensing": {
+        "present": 100,
+        "missing": 0,
+        "percentage": 100.0
+      },
+      "gen_meta": {
+        "present": 100,
+        "missing": 0,
+        "percentage": 100.0
+      }
+    },
+    "missing_samples": {}
+  },
+  "clarification_questions": {
+    "needs_clarification_samples": 100,
+    "has_clarification_questions": 100,
+    "missing_questions": 0,
+    "alignment_errors": 0,
+    "avg_questions_per_sample": 2.0,
+    "question_length_stats": {
+      "min": 41,
+      "max": 161,
+      "avg": 65.72
+    }
+  },
+  "task_type_enum": {
+    "valid_task_types": [
+      "math",
+      "ambiguous",
+      "multihop",
+      "longform"
+    ],
+    "invalid_count": 0,
+    "invalid_samples": []
+  },
+  "licensing_format": {
+    "valid_formats": [
+      "cc-by-sa-4.0",
+      "mit",
+      "cc-by-sa-3.0",
+      "apache-2.0"
+    ],
+    "type_errors": [],
+    "format_errors": [],
+    "total_errors": 0
+  },
+  "text_lengths": {
+    "thresholds": {
+      "user_query": 2048,
+      "clarification_questions": 512,
+      "provided_context": 4096,
+      "assistant_response": 4096
+    },
+    "violations": {},
+    "violation_counts": {}
+  },
+  "near_duplicates": {
+    "total_samples": 100,
+    "unique_samples": 100,
+    "duplicate_samples": 0,
+    "duplicate_ratio": 0.0,
+    "duplicate_groups": 0,
+    "singleton_groups": 100,
+    "duplicate_details": {}
+  }
+}
