@@ -1,16 +1,16 @@
 {
-  "timestamp": "2025-09-02T22:00:00.000000",
-  "total_samples": 2012,
+  "timestamp": "2025-09-03T00:58:21.428752",
+  "total_samples": 1456,
   "near_duplicates": {
     "duplicate_ratio": 0.0
   },
   "alignment_stats": {
-    "alignment_ok_count": 1852,
-    "alignment_error_count": 160,
-    "alignment_ok_percentage": 92.04771371769384
+    "alignment_ok_count": 1456,
+    "alignment_error_count": 0,
+    "alignment_ok_percentage": 100.0
   },
   "shards": {
-    "shard-000": 156,
+    "shard-000": 100,
     "shard-001": 56,
     "shard-002": 500,
     "shard-003": 100,
@@ -18,14 +18,86 @@
     "shard-004a": 500,
     "shard-005": 100
   },
+  "by_shard": {
+    "shard-000": {
+      "total_samples": 100,
+      "alignment_ok_count": 100,
+      "duplicate_ratio": 0.0,
+      "task_type": "ambiguous",
+      "licensing": "cc-by-sa-3.0"
+    },
+    "shard-001": {
+      "total_samples": 56,
+      "alignment_ok_count": 56,
+      "duplicate_ratio": 0.0,
+      "task_type": "ambiguous",
+      "licensing": "cc-by-sa-3.0"
+    },
+    "shard-002": {
+      "total_samples": 500,
+      "alignment_ok_count": 500,
+      "duplicate_ratio": 0.0,
+      "task_type": "ambiguous",
+      "licensing": "cc-by-sa-3.0"
+    },
+    "shard-003": {
+      "total_samples": 100,
+      "alignment_ok_count": 100,
+      "duplicate_ratio": 0.0,
+      "task_type": "multihop",
+      "licensing": "cc-by-sa-4.0"
+    },
+    "shard-004": {
+      "total_samples": 100,
+      "alignment_ok_count": 100,
+      "duplicate_ratio": 0.0,
+      "task_type": "longform",
+      "licensing": "apache-2.0"
+    },
+    "shard-004a": {
+      "total_samples": 500,
+      "alignment_ok_count": 500,
+      "duplicate_ratio": 0.0,
+      "task_type": "ambiguous",
+      "licensing": "cc-by-sa-3.0"
+    },
+    "shard-005": {
+      "total_samples": 100,
+      "alignment_ok_count": 100,
+      "duplicate_ratio": 0.0,
+      "task_type": "multihop",
+      "licensing": "cc-by-sa-4.0"
+    }
+  },
+  "license_whitelist_errors": [],
   "summary": {
-    "total_clarification_samples": 1912,
-    "total_alignment_errors": 160,
+    "total_clarification_samples": 1456,
+    "total_alignment_errors": 0,
     "field_completeness_avg": 100.0,
     "near_duplicates_avg": 0.0
   },
   "evidence_overlap": {
-    "mean": 0.7259285714285714,
-    "count": 100
+    "mean": 0.726,
+    "count": 200
+  },
+  "splits": {
+    "train": {
+      "count": 1120,
+      "percentage": 80.0
+    },
+    "dev": {
+      "count": 140,
+      "percentage": 10.0
+    },
+    "test": {
+      "count": 140,
+      "percentage": 10.0
+    }
+  },
+  "deduplication": {
+    "original_count": 1456,
+    "deduped_count": 1400,
+    "duplicates_removed": 56,
+    "deduplication_ratio": 0.038461538461538464
   }
 }
