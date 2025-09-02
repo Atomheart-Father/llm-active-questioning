@@ -1,109 +1,294 @@
 {
-  "timestamp": "2025-09-02T18:04:02.347548",
-  "total_samples": 100,
+  "timestamp": "2025-09-02T18:14:04.721642",
+  "total_samples": 156,
+  "shards": {
+    "shard_000": {
+      "samples": 100,
+      "metrics": {
+        "timestamp": "2025-09-02T18:04:02.347548",
+        "total_samples": 100,
+        "field_completeness": {
+          "field_completeness": {
+            "uid": {
+              "present": 100,
+              "missing": 0,
+              "percentage": 100.0
+            },
+            "user_query": {
+              "present": 100,
+              "missing": 0,
+              "percentage": 100.0
+            },
+            "needs_clarification": {
+              "present": 100,
+              "missing": 0,
+              "percentage": 100.0
+            },
+            "clarification_questions": {
+              "present": 100,
+              "missing": 0,
+              "percentage": 100.0
+            },
+            "provided_context": {
+              "present": 100,
+              "missing": 0,
+              "percentage": 100.0
+            },
+            "assistant_response": {
+              "present": 100,
+              "missing": 0,
+              "percentage": 100.0
+            },
+            "task_type": {
+              "present": 100,
+              "missing": 0,
+              "percentage": 100.0
+            },
+            "source": {
+              "present": 100,
+              "missing": 0,
+              "percentage": 100.0
+            },
+            "licensing": {
+              "present": 100,
+              "missing": 0,
+              "percentage": 100.0
+            },
+            "gen_meta": {
+              "present": 100,
+              "missing": 0,
+              "percentage": 100.0
+            }
+          },
+          "missing_samples": {}
+        },
+        "clarification_questions": {
+          "needs_clarification_samples": 100,
+          "has_clarification_questions": 100,
+          "missing_questions": 0,
+          "alignment_errors": 0,
+          "avg_questions_per_sample": 2.43,
+          "question_length_stats": {
+            "min": 32,
+            "max": 123,
+            "avg": 61.86
+          }
+        },
+        "task_type_enum": {
+          "valid_task_types": [
+            "ambiguous",
+            "math",
+            "multihop"
+          ],
+          "invalid_count": 0,
+          "invalid_samples": []
+        },
+        "licensing_format": {
+          "valid_formats": [
+            "cc-by-sa-3.0",
+            "mit",
+            "apache-2.0"
+          ],
+          "type_errors": [],
+          "format_errors": [],
+          "total_errors": 0
+        },
+        "text_lengths": {
+          "thresholds": {
+            "user_query": 2048,
+            "clarification_questions": 512,
+            "provided_context": 4096,
+            "assistant_response": 4096
+          },
+          "violations": {},
+          "violation_counts": {}
+        },
+        "near_duplicates": {
+          "total_samples": 100,
+          "unique_samples": 100,
+          "duplicate_samples": 0,
+          "duplicate_ratio": 0.0,
+          "duplicate_groups": 0,
+          "singleton_groups": 100,
+          "duplicate_details": {}
+        }
+      }
+    },
+    "shard_001": {
+      "samples": 56,
+      "metrics": {
+        "timestamp": "2025-09-02T18:14:04.721642",
+        "total_samples": 56,
+        "field_completeness": {
+          "field_completeness": {
+            "uid": {
+              "present": 56,
+              "missing": 0,
+              "percentage": 100.0
+            },
+            "user_query": {
+              "present": 56,
+              "missing": 0,
+              "percentage": 100.0
+            },
+            "needs_clarification": {
+              "present": 56,
+              "missing": 0,
+              "percentage": 100.0
+            },
+            "clarification_questions": {
+              "present": 56,
+              "missing": 0,
+              "percentage": 100.0
+            },
+            "provided_context": {
+              "present": 56,
+              "missing": 0,
+              "percentage": 100.0
+            },
+            "assistant_response": {
+              "present": 56,
+              "missing": 0,
+              "percentage": 100.0
+            },
+            "task_type": {
+              "present": 56,
+              "missing": 0,
+              "percentage": 100.0
+            },
+            "source": {
+              "present": 56,
+              "missing": 0,
+              "percentage": 100.0
+            },
+            "licensing": {
+              "present": 56,
+              "missing": 0,
+              "percentage": 100.0
+            },
+            "gen_meta": {
+              "present": 56,
+              "missing": 0,
+              "percentage": 100.0
+            }
+          },
+          "missing_samples": {}
+        },
+        "clarification_questions": {
+          "needs_clarification_samples": 56,
+          "has_clarification_questions": 56,
+          "missing_questions": 0,
+          "alignment_errors": 0,
+          "avg_questions_per_sample": 2.43,
+          "question_length_stats": {
+            "min": 32,
+            "max": 107,
+            "avg": 62.54
+          }
+        },
+        "task_type_enum": {
+          "valid_task_types": [
+            "multihop",
+            "ambiguous",
+            "math"
+          ],
+          "invalid_count": 0,
+          "invalid_samples": []
+        },
+        "licensing_format": {
+          "valid_formats": [
+            "apache-2.0",
+            "mit",
+            "cc-by-sa-3.0"
+          ],
+          "type_errors": [],
+          "format_errors": [],
+          "total_errors": 0
+        },
+        "text_lengths": {
+          "thresholds": {
+            "user_query": 2048,
+            "clarification_questions": 512,
+            "provided_context": 4096,
+            "assistant_response": 4096
+          },
+          "violations": {},
+          "violation_counts": {}
+        },
+        "near_duplicates": {
+          "total_samples": 56,
+          "unique_samples": 56,
+          "duplicate_samples": 0,
+          "duplicate_ratio": 0.0,
+          "duplicate_groups": 0,
+          "singleton_groups": 56,
+          "duplicate_details": {}
+        }
+      }
+    }
+  },
   "field_completeness": {
+    "total_samples": 156,
     "field_completeness": {
       "uid": {
-        "present": 100,
-        "missing": 0,
+        "present": 156,
         "percentage": 100.0
       },
       "user_query": {
-        "present": 100,
-        "missing": 0,
+        "present": 156,
         "percentage": 100.0
       },
       "needs_clarification": {
-        "present": 100,
-        "missing": 0,
+        "present": 156,
         "percentage": 100.0
       },
       "clarification_questions": {
-        "present": 100,
-        "missing": 0,
+        "present": 156,
         "percentage": 100.0
       },
       "provided_context": {
-        "present": 100,
-        "missing": 0,
+        "present": 156,
         "percentage": 100.0
       },
       "assistant_response": {
-        "present": 100,
-        "missing": 0,
+        "present": 156,
         "percentage": 100.0
       },
       "task_type": {
-        "present": 100,
-        "missing": 0,
+        "present": 156,
         "percentage": 100.0
       },
       "source": {
-        "present": 100,
-        "missing": 0,
+        "present": 156,
         "percentage": 100.0
       },
       "licensing": {
-        "present": 100,
-        "missing": 0,
+        "present": 156,
         "percentage": 100.0
       },
       "gen_meta": {
-        "present": 100,
-        "missing": 0,
+        "present": 156,
         "percentage": 100.0
       }
-    },
-    "missing_samples": {}
-  },
-  "clarification_questions": {
-    "needs_clarification_samples": 100,
-    "has_clarification_questions": 100,
-    "missing_questions": 0,
-    "alignment_errors": 0,
-    "avg_questions_per_sample": 2.43,
-    "question_length_stats": {
-      "min": 32,
-      "max": 123,
-      "avg": 61.86
     }
   },
+  "clarification_questions": {
+    "needs_clarification_samples": 156,
+    "has_clarification_questions": 156,
+    "alignment_errors": 0
+  },
   "task_type_enum": {
-    "valid_task_types": [
-      "ambiguous",
-      "math",
-      "multihop"
-    ],
-    "invalid_count": 0,
-    "invalid_samples": []
+    "invalid_count": 0
   },
   "licensing_format": {
-    "valid_formats": [
-      "cc-by-sa-3.0",
-      "mit",
-      "apache-2.0"
-    ],
-    "type_errors": [],
-    "format_errors": [],
     "total_errors": 0
   },
-  "text_lengths": {
-    "thresholds": {
-      "user_query": 2048,
-      "clarification_questions": 512,
-      "provided_context": 4096,
-      "assistant_response": 4096
-    },
-    "violations": {},
-    "violation_counts": {}
-  },
   "near_duplicates": {
-    "total_samples": 100,
-    "unique_samples": 100,
-    "duplicate_samples": 0,
-    "duplicate_ratio": 0.0,
-    "duplicate_groups": 0,
-    "singleton_groups": 100,
-    "duplicate_details": {}
+    "duplicate_ratio": 0.0
+  },
+  "alignment_stats": {
+    "alignment_ok_count": 156,
+    "alignment_error_count": 0,
+    "alignment_ok_percentage": 100.0
   }
 }
