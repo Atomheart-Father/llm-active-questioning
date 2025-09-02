@@ -1,55 +1,55 @@
 {
-  "timestamp": "2025-09-02T21:48:29.322566",
-  "total_samples": 500,
+  "timestamp": "2025-09-02T21:51:52.054764",
+  "total_samples": 100,
   "field_completeness": {
     "field_completeness": {
       "uid": {
-        "present": 500,
+        "present": 100,
         "missing": 0,
         "percentage": 100.0
       },
       "user_query": {
-        "present": 500,
+        "present": 100,
         "missing": 0,
         "percentage": 100.0
       },
       "needs_clarification": {
-        "present": 500,
+        "present": 100,
         "missing": 0,
         "percentage": 100.0
       },
       "clarification_questions": {
-        "present": 500,
+        "present": 100,
         "missing": 0,
         "percentage": 100.0
       },
       "provided_context": {
-        "present": 500,
+        "present": 100,
         "missing": 0,
         "percentage": 100.0
       },
       "assistant_response": {
-        "present": 500,
+        "present": 100,
         "missing": 0,
         "percentage": 100.0
       },
       "task_type": {
-        "present": 500,
+        "present": 100,
         "missing": 0,
         "percentage": 100.0
       },
       "source": {
-        "present": 500,
+        "present": 100,
         "missing": 0,
         "percentage": 100.0
       },
       "licensing": {
-        "present": 500,
+        "present": 100,
         "missing": 0,
         "percentage": 100.0
       },
       "gen_meta": {
-        "present": 500,
+        "present": 100,
         "missing": 0,
         "percentage": 100.0
       }
@@ -57,23 +57,23 @@
     "missing_samples": {}
   },
   "clarification_questions": {
-    "needs_clarification_samples": 500,
-    "has_clarification_questions": 500,
+    "needs_clarification_samples": 100,
+    "has_clarification_questions": 100,
     "missing_questions": 0,
     "alignment_errors": 0,
-    "avg_questions_per_sample": 1.29,
+    "avg_questions_per_sample": 2.0,
     "question_length_stats": {
-      "min": 28,
-      "max": 230,
-      "avg": 64.49
+      "min": 27,
+      "max": 70,
+      "avg": 39.27
     }
   },
   "task_type_enum": {
     "valid_task_types": [
-      "ambiguous",
       "longform",
-      "multihop",
-      "math"
+      "ambiguous",
+      "math",
+      "multihop"
     ],
     "invalid_count": 0,
     "invalid_samples": []
@@ -100,12 +100,28 @@
     "violation_counts": {}
   },
   "near_duplicates": {
-    "total_samples": 500,
-    "unique_samples": 500,
+    "total_samples": 100,
+    "unique_samples": 100,
     "duplicate_samples": 0,
     "duplicate_ratio": 0.0,
     "duplicate_groups": 0,
-    "singleton_groups": 500,
+    "singleton_groups": 100,
     "duplicate_details": {}
-  }
+  },
+  "evidence_overlap": {
+    "mean": 0.7259285714285714,
+    "min": 0.0,
+    "max": 0.875,
+    "count": 100
+  },
+  "license_whitelist_errors": [],
+  "by_shard": {
+    "hotpotqa": {
+      "total": 100,
+      "alignment_ok": 100,
+      "duplicates": 0,
+      "evidence_overlap_mean": 0.7259285714285714
+    }
+  },
+  "drop_reasons": {}
 }

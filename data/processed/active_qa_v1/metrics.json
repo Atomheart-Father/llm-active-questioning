@@ -1,13 +1,13 @@
 {
-  "timestamp": "2025-09-02T21:15:24.083141",
-  "total_samples": 1412,
+  "timestamp": "2025-09-02T22:00:00.000000",
+  "total_samples": 2012,
   "near_duplicates": {
     "duplicate_ratio": 0.0
   },
   "alignment_stats": {
-    "alignment_ok_count": 1252,
+    "alignment_ok_count": 1852,
     "alignment_error_count": 160,
-    "alignment_ok_percentage": 88.67
+    "alignment_ok_percentage": 92.04771371769384
   },
   "shards": {
     "shard-000": 156,
@@ -15,12 +15,17 @@
     "shard-002": 500,
     "shard-003": 100,
     "shard-004": 100,
-    "shard-004a": 500
+    "shard-004a": 500,
+    "shard-005": 100
   },
   "summary": {
-    "total_clarification_samples": 1412,
+    "total_clarification_samples": 1912,
     "total_alignment_errors": 160,
     "field_completeness_avg": 100.0,
     "near_duplicates_avg": 0.0
+  },
+  "evidence_overlap": {
+    "mean": 0.7259285714285714,
+    "count": 100
   }
 }
