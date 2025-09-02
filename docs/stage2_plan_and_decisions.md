@@ -63,7 +63,61 @@
 
 ## 合成策略 v1
 
-TODO: 待补充
+### 策略概述
+基于 AmbigQA 数据集进行主动澄清问句合成，严格遵循"零模拟"原则，仅对原始数据进行字段映射和清洗，不创造任何新内容。
+
+### 缺口识别
+从原始 AmbigQA 样本的 `question` + `annotations.qaPairs` 中提取歧义缺口：
+- **实体歧义**: 人名、地名、组织名等指代不清
+- **时间歧义**: 历史时期、日期范围等模糊表达
+- **地点歧义**: 地理位置、场所等空间概念不清
+- **范围歧义**: 数量、程度、条件等限定不清
+
+### 澄清问句生成
+- **输入**: 原始 `question` + `annotations.qaPairs.question[]`
+- **处理**: 直接使用 qaPairs 中的子问题，不创造新问句
+- **清洗**: 去重、截断过长问题（最大512字符）、去除噪声
+- **输出**: 1–3 个澄清问句，按优先级排序
+
+### 答案枚举生成
+- **输入**: `annotations.qaPairs.answer[]`
+- **处理**: 仅复述已有答案，不外推新事实
+- **格式**: "若A则…；若B则…；若C则…" 的枚举形式
+- **约束**: 严格对应每个澄清问句的答案，不添加解释
+
+### 上下文提供
+- **来源**: 直接引用 `annotations` 中的可用信息
+- **内容**: 问题相关的背景信息、约束条件等
+- **格式**: 结构化文本，便于后续处理
+
+### 元数据记录
+- `gen_meta.generator_version`: "stage2_data_synth_v1"
+- `gen_meta.generation_timestamp`: ISO 8601 格式时间戳
+- `gen_meta.seed`: 固定种子值（如 20240902）
+- `gen_meta.source_dataset`: "ambigqa"
+- `gen_meta.source_config`: "light"
+- `gen_meta.quality_score`: 预留字段（当前设为 null）
+
+### 字段映射表
+
+| 目标字段 | 来源 | 说明 |
+|---------|------|------|
+| `uid` | 生成 | MD5(源ID + 时间戳) |
+| `user_query` | `question` | 原始歧义问题 |
+| `needs_clarification` | 固定值 | `true` |
+| `clarification_questions` | `qaPairs.question[]` | 清洗后的澄清问句列表 |
+| `provided_context` | `annotations` | 相关上下文信息 |
+| `assistant_response` | `qaPairs.answer[]` | 枚举式最终答案 |
+| `task_type` | 固定值 | `"qa"` |
+| `source` | 固定值 | `"ambigqa"` |
+| `licensing` | 固定值 | `{"license_type": "cc-by-sa-3.0"}` |
+| `gen_meta` | 生成 | 上述元数据字段 |
+
+### 质量保证
+- **可追溯性**: 每个输出字段可回溯到原始数据
+- **无新增内容**: 不创造任何新事实、解释或问句
+- **格式一致性**: 严格遵循 schema.json 定义
+- **种子固定**: 使用固定随机种子保证结果可重现
 
 ---
 
