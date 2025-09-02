@@ -130,7 +130,7 @@ class QualityChecker:
 
     def check_licensing_format(self, samples: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Check licensing format."""
-        valid_formats = {"cc-by-sa-3.0", "mit", "apache-2.0"}
+        valid_formats = {"cc-by-sa-3.0", "cc-by-sa-4.0", "mit", "apache-2.0"}
         format_errors = []
         type_errors = []
 
