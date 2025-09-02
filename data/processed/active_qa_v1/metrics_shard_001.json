@@ -1,0 +1,109 @@
+{
+  "timestamp": "2025-09-02T18:14:04.721642",
+  "total_samples": 56,
+  "field_completeness": {
+    "field_completeness": {
+      "uid": {
+        "present": 56,
+        "missing": 0,
+        "percentage": 100.0
+      },
+      "user_query": {
+        "present": 56,
+        "missing": 0,
+        "percentage": 100.0
+      },
+      "needs_clarification": {
+        "present": 56,
+        "missing": 0,
+        "percentage": 100.0
+      },
+      "clarification_questions": {
+        "present": 56,
+        "missing": 0,
+        "percentage": 100.0
+      },
+      "provided_context": {
+        "present": 56,
+        "missing": 0,
+        "percentage": 100.0
+      },
+      "assistant_response": {
+        "present": 56,
+        "missing": 0,
+        "percentage": 100.0
+      },
+      "task_type": {
+        "present": 56,
+        "missing": 0,
+        "percentage": 100.0
+      },
+      "source": {
+        "present": 56,
+        "missing": 0,
+        "percentage": 100.0
+      },
+      "licensing": {
+        "present": 56,
+        "missing": 0,
+        "percentage": 100.0
+      },
+      "gen_meta": {
+        "present": 56,
+        "missing": 0,
+        "percentage": 100.0
+      }
+    },
+    "missing_samples": {}
+  },
+  "clarification_questions": {
+    "needs_clarification_samples": 56,
+    "has_clarification_questions": 56,
+    "missing_questions": 0,
+    "alignment_errors": 0,
+    "avg_questions_per_sample": 2.43,
+    "question_length_stats": {
+      "min": 32,
+      "max": 107,
+      "avg": 62.54
+    }
+  },
+  "task_type_enum": {
+    "valid_task_types": [
+      "multihop",
+      "ambiguous",
+      "math"
+    ],
+    "invalid_count": 0,
+    "invalid_samples": []
+  },
+  "licensing_format": {
+    "valid_formats": [
+      "apache-2.0",
+      "mit",
+      "cc-by-sa-3.0"
+    ],
+    "type_errors": [],
+    "format_errors": [],
+    "total_errors": 0
+  },
+  "text_lengths": {
+    "thresholds": {
+      "user_query": 2048,
+      "clarification_questions": 512,
+      "provided_context": 4096,
+      "assistant_response": 4096
+    },
+    "violations": {},
+    "violation_counts": {}
+  },
+  "near_duplicates": {
+    "total_samples": 56,
+    "unique_samples": 56,
+    "duplicate_samples": 0,
+    "duplicate_ratio": 0.0,
+    "duplicate_groups": 0,
+    "singleton_groups": 56,
+    "duplicate_details": {}
+  }
+}
