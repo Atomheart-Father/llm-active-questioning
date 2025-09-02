@@ -1,11 +1,11 @@
 {
-  "timestamp": "2025-09-02T20:36:24.083141",
-  "total_samples": 812,
+  "timestamp": "2025-09-02T20:46:24.083141",
+  "total_samples": 912,
   "near_duplicates": {
     "duplicate_ratio": 0.0
   },
   "alignment_stats": {
-    "alignment_ok_count": 812,
+    "alignment_ok_count": 912,
     "alignment_error_count": 0,
     "alignment_ok_percentage": 100.0
   },
@@ -13,10 +13,11 @@
     "shard-000": 156,
     "shard-001": 56,
     "shard-002": 500,
-    "shard-003": 100
+    "shard-003": 100,
+    "shard-004": 100
   },
   "summary": {
-    "total_clarification_samples": 812,
+    "total_clarification_samples": 912,
     "total_alignment_errors": 0,
     "field_completeness_avg": 100.0,
     "near_duplicates_avg": 0.0
