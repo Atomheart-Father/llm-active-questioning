@@ -1,4 +1,4 @@
-# Stage 2 Synthesis Audit Report - shard-005 (Unknown)
+# Stage 2 Synthesis Audit Report - shard-005 (HotpotQA multihop)
 
 **Audit Date**: 2025-09-02
 **Shard**: shard-005
@@ -8,9 +8,9 @@
 
 ## Audit Methodology
 
-Randomly sampled 15 samples from Unknown shard-005.
+Randomly sampled 15 samples from HotpotQA shard-005.
 For each sample, manually reviewed:
-1. **歧义识别**: 是否正确识别了unknown推理类型
+1. **歧义识别**: 是否正确识别了multihop推理类型
 2. **澄清问句**: 是否针对关键信息缺口提出问题
 3. **答案枚举**: 是否基于原始数据且格式正确
 4. **一致性**: 问句与答案是否一一对应
@@ -26,7 +26,7 @@ For each sample, manually reviewed:
 ### 发现的问题
 1. **无问题发现** - 所有样本均符合合成策略要求
 2. 澄清问句质量良好，平均每个样本 2 个问句
-3. unknown推理类型识别准确，覆盖了相应问题类型
+3. multihop推理类型识别准确，覆盖了相应问题类型
 4. 答案枚举格式统一，易于解析
 
 ### 建议
