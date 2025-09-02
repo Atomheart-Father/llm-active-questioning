@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-09-02T21:28:17.174625",
+  "timestamp": "2025-09-02T21:48:29.322566",
   "total_samples": 500,
   "field_completeness": {
     "field_completeness": {
@@ -60,30 +60,30 @@
     "needs_clarification_samples": 500,
     "has_clarification_questions": 500,
     "missing_questions": 0,
-    "alignment_errors": 160,
-    "avg_questions_per_sample": 1.43,
+    "alignment_errors": 0,
+    "avg_questions_per_sample": 1.29,
     "question_length_stats": {
-      "min": 11,
-      "max": 144,
-      "avg": 43.28
+      "min": 28,
+      "max": 230,
+      "avg": 64.49
     }
   },
   "task_type_enum": {
     "valid_task_types": [
       "ambiguous",
+      "longform",
       "multihop",
-      "math",
-      "longform"
+      "math"
     ],
     "invalid_count": 0,
     "invalid_samples": []
   },
   "licensing_format": {
     "valid_formats": [
-      "cc-by-sa-4.0",
-      "apache-2.0",
       "cc-by-sa-3.0",
-      "mit"
+      "mit",
+      "cc-by-sa-4.0",
+      "apache-2.0"
     ],
     "type_errors": [],
     "format_errors": [],
