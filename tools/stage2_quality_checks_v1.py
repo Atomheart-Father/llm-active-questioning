@@ -75,15 +75,25 @@ class QualityChecker:
         has_questions_count = 0
         total_questions = 0
         question_lengths = []
+        alignment_errors = 0
 
         for sample in samples:
             if sample.get("needs_clarification", False):
                 needs_clarification_count += 1
 
                 questions = sample.get("clarification_questions", [])
+                assistant_response = sample.get("assistant_response", "")
+
                 if questions:
                     has_questions_count += 1
                     total_questions += len(questions)
+
+                    # Check alignment between questions and response
+                    expected_options = len(questions)
+                    actual_options = assistant_response.count("；") + 1 if assistant_response else 0
+
+                    if assistant_response and expected_options != actual_options:
+                        alignment_errors += 1
 
                     for q in questions:
                         if isinstance(q, str):
@@ -93,12 +103,54 @@ class QualityChecker:
             "needs_clarification_samples": needs_clarification_count,
             "has_clarification_questions": has_questions_count,
             "missing_questions": needs_clarification_count - has_questions_count,
+            "alignment_errors": alignment_errors,
             "avg_questions_per_sample": round(total_questions / max(has_questions_count, 1), 2),
             "question_length_stats": {
                 "min": min(question_lengths) if question_lengths else 0,
                 "max": max(question_lengths) if question_lengths else 0,
                 "avg": round(sum(question_lengths) / len(question_lengths), 2) if question_lengths else 0
             }
+        }
+
+    def check_task_type_enum(self, samples: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Check task_type enum values."""
+        valid_task_types = {"ambiguous", "math", "multihop"}
+        invalid_samples = []
+
+        for i, sample in enumerate(samples):
+            task_type = sample.get("task_type")
+            if task_type not in valid_task_types:
+                invalid_samples.append((i, task_type))
+
+        return {
+            "valid_task_types": list(valid_task_types),
+            "invalid_count": len(invalid_samples),
+            "invalid_samples": invalid_samples
+        }
+
+    def check_licensing_format(self, samples: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Check licensing format."""
+        valid_formats = {"cc-by-sa-3.0", "mit", "apache-2.0"}
+        format_errors = []
+        type_errors = []
+
+        for i, sample in enumerate(samples):
+            licensing = sample.get("licensing")
+
+            # Check type
+            if not isinstance(licensing, str):
+                type_errors.append((i, type(licensing).__name__))
+                continue
+
+            # Check value
+            if licensing not in valid_formats:
+                format_errors.append((i, licensing))
+
+        return {
+            "valid_formats": list(valid_formats),
+            "type_errors": type_errors,
+            "format_errors": format_errors,
+            "total_errors": len(type_errors) + len(format_errors)
         }
 
     def check_text_lengths(self, samples: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -187,6 +239,12 @@ class QualityChecker:
         print("Running clarification questions check...")
         clarification_check = self.check_clarification_questions(samples)
 
+        print("Running task_type enum check...")
+        task_type_check = self.check_task_type_enum(samples)
+
+        print("Running licensing format check...")
+        licensing_check = self.check_licensing_format(samples)
+
         print("Running text length check...")
         length_check = self.check_text_lengths(samples)
 
@@ -198,6 +256,8 @@ class QualityChecker:
             "total_samples": len(samples),
             "field_completeness": field_check,
             "clarification_questions": clarification_check,
+            "task_type_enum": task_type_check,
+            "licensing_format": licensing_check,
             "text_lengths": length_check,
             "near_duplicates": duplicate_check
         }
@@ -257,7 +317,16 @@ def main():
     for field, stats in metrics['field_completeness']['field_completeness'].items():
         print(f"  {field}: {stats['percentage']}%")
 
-    print(f"Clarification questions: {metrics['clarification_questions']['has_clarification_questions']}/{metrics['clarification_questions']['needs_clarification_samples']}")
+    clarification = metrics['clarification_questions']
+    print(f"Clarification questions: {clarification['has_clarification_questions']}/{clarification['needs_clarification_samples']}")
+    print(f"  - Alignment errors: {clarification['alignment_errors']}")
+
+    task_type = metrics['task_type_enum']
+    print(f"Task type enum: {task_type['invalid_count']} invalid samples")
+
+    licensing = metrics['licensing_format']
+    print(f"Licensing format: {licensing['total_errors']} errors")
+
     print(f"Near duplicates: {metrics['near_duplicates']['duplicate_ratio']}%")
 
 if __name__ == "__main__":
