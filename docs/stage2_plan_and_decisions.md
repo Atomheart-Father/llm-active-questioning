@@ -11,7 +11,7 @@
 - **来源URL**: https://huggingface.co/datasets/sewon/ambig_qa
 - **后备下载**: https://nlp.cs.washington.edu/ambigqa/ (UW官方页面)
 - **字段结构**: `id`, `question`, `annotations` (light配置)
-- **当前使用**: 200条样本，已保存至 `data/raw/ambigqa/20250902/ambigqa_200.jsonl`
+- **当前使用**: 2000条样本，已保存至 `data/raw/ambigqa/20250902/ambigqa_200.jsonl` + `data/raw/ambigqa/20250903/ambigqa_2000.jsonl`
 
 #### 2. GSM8K（数学推理）
 - **Hugging Face ID**: `openai/gsm8k`

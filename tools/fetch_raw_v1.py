@@ -38,7 +38,7 @@ DATASETS = {
         "hf_id": "sewon/ambig_qa",
         "config": "light",
         "split": "train",
-        "license": "CC-BY-SA-4.0"
+        "license": "cc-by-sa-3.0"
     },
     "gsm8k": {
         "hf_id": "openai/gsm8k",
@@ -76,16 +76,24 @@ class RawDataFetcher:
             'license', 'created_at'
         ]
 
-    def fetch_ambigqa(self, count: int, output_dir: Path, seed: int = 20240902) -> List[Dict[str, Any]]:
+    def fetch_ambigqa(self, count: int, output_dir: Path, seed: int = 20240902, skip: int = 0) -> List[Dict[str, Any]]:
         """Fetch AmbigQA dataset samples from Hugging Face."""
-        print(f"Loading AmbigQA dataset from sewon/ambig_qa (light config)...")
+        print(f"Loading AmbigQA dataset from sewon/ambig_qa (light config), skipping {skip} samples...")
 
         try:
             # Load the AmbigQA dataset using the correct HF ID
             dataset = load_dataset("sewon/ambig_qa", "light", split="train")
 
-            # Select first 'count' samples without shuffle for reproducibility
-            selected_dataset = dataset.select(range(min(count, len(dataset))))
+            # Calculate the range to select
+            start_idx = skip
+            end_idx = min(skip + count, len(dataset))
+
+            if start_idx >= len(dataset):
+                print(f"Skip index {skip} is beyond dataset size {len(dataset)}")
+                return []
+
+            # Select samples without shuffle for reproducibility
+            selected_dataset = dataset.select(range(start_idx, end_idx))
 
             samples = []
             for item in selected_dataset:
@@ -96,7 +104,7 @@ class RawDataFetcher:
                 }
                 samples.append(sample)
 
-            print(f"Successfully loaded {len(samples)} AmbigQA samples from sewon/ambig_qa")
+            print(f"Successfully loaded {len(samples)} AmbigQA samples from sewon/ambig_qa (indices {start_idx}-{end_idx-1})")
             return samples
 
         except Exception as e:
@@ -209,7 +217,7 @@ class RawDataFetcher:
                         print(f"{key}: {str(value)[:100]}{'...' if len(str(value)) > 100 else ''}")
 
     def fetch_dataset(self, dataset_name: str, count: int, output_file: Path,
-                     provenance_file: Path, seed: int = 20240902):
+                     provenance_file: Path, seed: int = 20240902, skip: int = 0):
         """Main method to fetch a specific dataset."""
         print(f"Fetching {count} samples from {dataset_name}...")
 
@@ -223,9 +231,9 @@ class RawDataFetcher:
 
         # Fetch samples based on dataset
         if dataset_name.lower() == "ambigqa":
-            samples = self.fetch_ambigqa(count, output_file.parent, seed)
+            samples = self.fetch_ambigqa(count, output_file.parent, seed, skip)
         elif dataset_name.lower() == "gsm8k":
-            samples = self.fetch_gsm8k(count, output_file.parent, seed)
+            samples = self.fetch_gsm8k(count, output_file.parent, seed, skip)
         else:
             print(f"Fetching method not implemented for {dataset_name}")
             return False
@@ -274,6 +282,12 @@ def main():
         help="Random seed for reproducibility (default: 20240902)"
     )
     parser.add_argument(
+        "--skip",
+        type=int,
+        default=0,
+        help="Number of samples to skip from the beginning (default: 0)"
+    )
+    parser.add_argument(
         "--provenance-file",
         type=Path,
         default=Path("data/processed/active_qa_v1/provenance.csv"),
@@ -294,7 +308,8 @@ def main():
         args.n,
         args.out,
         args.provenance_file,
-        args.seed
+        args.seed,
+        args.skip
     )
 
     if success:
