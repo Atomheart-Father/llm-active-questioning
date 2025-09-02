@@ -69,27 +69,37 @@ class AmbigQASynthesizer:
         # Limit to 1-3 questions, prioritize first ones
         return questions[:3] if questions else []
 
-    def generate_answer_enumeration(self, qa_pairs: List[Dict[str, Any]]) -> str:
-        """Generate enumerated answer from qaPairs."""
+    def generate_answer_enumeration(self, qa_pairs: List[Dict[str, Any]], selected_questions: List[str]) -> str:
+        """Generate enumerated answer from qaPairs, matching selected questions."""
         answers = []
 
-        for i, pair in enumerate(qa_pairs):
+        # Collect all answers from qaPairs
+        all_answers = []
+        for pair in qa_pairs:
             if "answer" in pair:
                 pair_answers = pair["answer"]
-                if isinstance(pair_answers, list) and pair_answers:
-                    # Take first answer from each pair
-                    first_answer = pair_answers[0]
-                    if isinstance(first_answer, list) and first_answer:
-                        answer_text = first_answer[0] if isinstance(first_answer[0], str) else str(first_answer[0])
-                    elif isinstance(first_answer, str):
-                        answer_text = first_answer
-                    else:
-                        answer_text = str(first_answer)
+                if isinstance(pair_answers, list):
+                    # Each pair may have multiple answers
+                    for answer_list in pair_answers:
+                        if isinstance(answer_list, list) and answer_list:
+                            # Take first answer from each answer list
+                            first_answer = answer_list[0]
+                            if isinstance(first_answer, str):
+                                answer_text = first_answer
+                            else:
+                                answer_text = str(first_answer)
+                            all_answers.append(answer_text)
 
-                    answers.append(f"若选项{i+1}则{answer_text}")
+        # Only use answers for the selected questions (limit to same count)
+        num_questions = len(selected_questions)
+        answers = all_answers[:num_questions]
 
+        # Generate enumerated response
         if answers:
-            return "；".join(answers)
+            enumerated_answers = []
+            for i, answer in enumerate(answers):
+                enumerated_answers.append(f"若选项{i+1}则{answer}")
+            return "；".join(enumerated_answers)
         return ""
 
     def extract_context(self, annotations: Dict[str, Any]) -> str:
@@ -130,10 +140,10 @@ class AmbigQASynthesizer:
             if not clarification_questions:
                 return None
 
-            # Generate answer enumeration
+            # Generate answer enumeration - only for selected questions
             assistant_response = ""
             if "qaPairs" in annotations:
-                assistant_response = self.generate_answer_enumeration(annotations["qaPairs"])
+                assistant_response = self.generate_answer_enumeration(annotations["qaPairs"], clarification_questions)
 
             # Extract context
             provided_context = self.extract_context(annotations)
@@ -156,13 +166,9 @@ class AmbigQASynthesizer:
                 "clarification_questions": clarification_questions,
                 "provided_context": provided_context,
                 "assistant_response": assistant_response,
-                "task_type": "qa",
+                "task_type": "ambiguous",
                 "source": "ambigqa",
-                "licensing": {
-                    "license_type": "cc-by-sa-3.0",
-                    "attribution_required": True,
-                    "commercial_use_allowed": True
-                },
+                "licensing": "cc-by-sa-3.0",
                 "gen_meta": gen_meta
             }
 
@@ -172,10 +178,13 @@ class AmbigQASynthesizer:
             print(f"Error synthesizing sample {raw_sample.get('id', 'unknown')}: {e}")
             return None
 
-    def synthesize_batch(self, raw_samples: List[Dict[str, Any]], count: int) -> List[Dict[str, Any]]:
+    def synthesize_batch(self, raw_samples: List[Dict[str, Any]], count: int, skip: int = 0) -> List[Dict[str, Any]]:
         """Synthesize a batch of active QA samples."""
+        # Skip the first 'skip' samples to avoid overlap with previous shards
+        available_samples = raw_samples[skip:]
+
         # Shuffle for randomization (but with fixed seed)
-        shuffled_samples = raw_samples.copy()
+        shuffled_samples = available_samples.copy()
         random.shuffle(shuffled_samples)
 
         synthesized_samples = []
@@ -190,7 +199,7 @@ class AmbigQASynthesizer:
                 synthesized_samples.append(synthesized)
                 processed_count += 1
 
-        print(f"Successfully synthesized {len(synthesized_samples)} samples")
+        print(f"Successfully synthesized {len(synthesized_samples)} samples (skipped {skip} samples)")
         return synthesized_samples
 
     def save_synthesized_data(self, samples: List[Dict[str, Any]], output_file: Path):
@@ -230,6 +239,12 @@ def main():
         default=SEED,
         help=f"Random seed for reproducibility (default: {SEED})"
     )
+    parser.add_argument(
+        "--skip",
+        type=int,
+        default=0,
+        help="Number of samples to skip from the beginning (default: 0)"
+    )
 
     args = parser.parse_args()
 
@@ -246,8 +261,8 @@ def main():
     raw_samples = synthesizer.load_raw_data(args.input)
 
     # Synthesize samples
-    print(f"Synthesizing {args.count} samples with seed {args.seed}")
-    synthesized_samples = synthesizer.synthesize_batch(raw_samples, args.count)
+    print(f"Synthesizing {args.count} samples with seed {args.seed} (skipping {args.skip} samples)")
+    synthesized_samples = synthesizer.synthesize_batch(raw_samples, args.count, args.skip)
 
     # Save results
     synthesizer.save_synthesized_data(synthesized_samples, args.output)
