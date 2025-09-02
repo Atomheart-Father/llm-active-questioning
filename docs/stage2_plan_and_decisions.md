@@ -228,6 +228,7 @@
 - **编号文件**: 仅对应具体分片（如 `sampling_review_000.md`, `sampling_review_001.md`, `sampling_review_002.md`）
 - **汇总文件**: 使用非编号命名（如 `sampling_review_ambigqa_cumulative.md`）
 - **作用**: 各分片的抽样审计报告或跨分片的汇总审计
+- **重要说明**: 汇总文件避免使用编号命名，以免与分片编号冲突（如003应预留给HotpotQA分片）
 
 ---
 
