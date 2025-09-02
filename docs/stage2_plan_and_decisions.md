@@ -5,7 +5,7 @@
 ### 当前使用的真实数据集
 
 #### 1. AmbigQA（歧义问答）
-- **Hugging Face ID**: `sewon/ambig_qa` (light config)
+- **Hugging Face ID**: `sewon/ambig_qa` (config: light, split: train)
 - **描述**: 歧义问题数据集，包含需要澄清的模糊问题
 - **许可**: CC BY-SA 3.0
 - **来源URL**: https://huggingface.co/datasets/sewon/ambig_qa

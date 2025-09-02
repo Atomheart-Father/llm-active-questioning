@@ -76,7 +76,7 @@ class RawDataFetcher:
             'license', 'created_at'
         ]
 
-    def fetch_ambigqa(self, count: int, output_dir: Path) -> List[Dict[str, Any]]:
+    def fetch_ambigqa(self, count: int, output_dir: Path, seed: int = 20240902) -> List[Dict[str, Any]]:
         """Fetch AmbigQA dataset samples from Hugging Face."""
         print(f"Loading AmbigQA dataset from sewon/ambig_qa (light config)...")
 
@@ -84,14 +84,13 @@ class RawDataFetcher:
             # Load the AmbigQA dataset using the correct HF ID
             dataset = load_dataset("sewon/ambig_qa", "light", split="train")
 
-            # Take first 'count' samples
-            samples = []
-            for i, item in enumerate(dataset):
-                if i >= count:
-                    break
+            # Select first 'count' samples without shuffle for reproducibility
+            selected_dataset = dataset.select(range(min(count, len(dataset))))
 
+            samples = []
+            for item in selected_dataset:
                 sample = {
-                    "id": item.get("id", f"ambigqa_{i}"),
+                    "id": item.get("id", ""),
                     "question": item.get("question", ""),
                     "annotations": item.get("annotations", {})
                 }
@@ -106,22 +105,21 @@ class RawDataFetcher:
             print("If HF is unavailable, download from: https://nlp.cs.washington.edu/ambigqa/")
             return []
 
-    def fetch_gsm8k(self, count: int, output_dir: Path) -> List[Dict[str, Any]]:
+    def fetch_gsm8k(self, count: int, output_dir: Path, seed: int = 20240902) -> List[Dict[str, Any]]:
         """Fetch GSM8K dataset samples."""
         print(f"Loading GSM8K dataset...")
 
         try:
             # Load the GSM8K dataset
-            dataset = load_dataset("gsm8k", "main", split="train")
+            dataset = load_dataset("openai/gsm8k", "main", split="train")
 
-            # Take first 'count' samples
+            # Select first 'count' samples without shuffle for reproducibility
+            selected_dataset = dataset.select(range(min(count, len(dataset))))
+
             samples = []
-            for i, item in enumerate(dataset):
-                if i >= count:
-                    break
-
+            for item in selected_dataset:
                 sample = {
-                    "id": item.get("id", f"gsm8k_{i}"),
+                    "id": item.get("id", ""),
                     "question": item.get("question", ""),
                     "answer": item.get("answer", ""),
                     "solution": item.get("solution", "") if "solution" in item else ""
@@ -211,7 +209,7 @@ class RawDataFetcher:
                         print(f"{key}: {str(value)[:100]}{'...' if len(str(value)) > 100 else ''}")
 
     def fetch_dataset(self, dataset_name: str, count: int, output_file: Path,
-                     provenance_file: Path):
+                     provenance_file: Path, seed: int = 20240902):
         """Main method to fetch a specific dataset."""
         print(f"Fetching {count} samples from {dataset_name}...")
 
@@ -225,9 +223,9 @@ class RawDataFetcher:
 
         # Fetch samples based on dataset
         if dataset_name.lower() == "ambigqa":
-            samples = self.fetch_ambigqa(count, output_file.parent)
+            samples = self.fetch_ambigqa(count, output_file.parent, seed)
         elif dataset_name.lower() == "gsm8k":
-            samples = self.fetch_gsm8k(count, output_file.parent)
+            samples = self.fetch_gsm8k(count, output_file.parent, seed)
         else:
             print(f"Fetching method not implemented for {dataset_name}")
             return False
@@ -270,6 +268,12 @@ def main():
         help="Output file path (e.g., data/raw/ambigqa/20250902/ambigqa_200.jsonl)"
     )
     parser.add_argument(
+        "--seed",
+        type=int,
+        default=20240902,
+        help="Random seed for reproducibility (default: 20240902)"
+    )
+    parser.add_argument(
         "--provenance-file",
         type=Path,
         default=Path("data/processed/active_qa_v1/provenance.csv"),
@@ -289,7 +293,8 @@ def main():
         args.name,
         args.n,
         args.out,
-        args.provenance_file
+        args.provenance_file,
+        args.seed
     )
 
     if success:
