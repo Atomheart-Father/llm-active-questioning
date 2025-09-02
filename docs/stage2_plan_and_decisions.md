@@ -241,3 +241,77 @@ TODO: 待补充
 ## 抽样审计流程 v1
 
 TODO: 待补充
+
+---
+
+## ASQA 字段映射与许可
+
+### 数据集许可
+- **许可类型**: Apache-2.0
+- **来源**: [Hugging Face din0s/asqa](https://huggingface.co/datasets/din0s/asqa)
+- **使用约束**: 商业使用友好，修改和分发自由
+
+### 原始字段结构
+ASQA数据集包含以下关键字段：
+- `sample_id`: 样本唯一标识符
+- `ambiguous_question`: 模糊问题文本
+- `annotations`: 包含`knowledge`、`long_answer`、`qa_pairs`等
+- `wikipages`: 相关维基页面信息
+- `qa_pairs`: 问题-答案对列表，包含上下文和答案
+
+### 字段映射表
+
+| ASQA字段 | 目标schema字段 | 映射规则 |
+|---------|---------------|---------|
+| `ambiguous_question` | `user_query` | 直接复制 |
+| `long_answer` | `provided_context` | 作为上下文信息 |
+| `qa_pairs[].question` | `clarification_questions` | 提取1-2个关键澄清问句 |
+| `qa_pairs[].short_answers` | `assistant_response` | 枚举式整合答案 |
+| 自动生成 | `uid` | 基于`sample_id`生成 |
+| 自动生成 | `task_type` | 设置为`"longform"` |
+| 自动生成 | `licensing` | 设置为`"apache-2.0"` |
+| 自动生成 | `source` | 设置为`"asqa"` |
+
+### 回应约束（不引入新事实）
+1. **仅枚举**: 只使用`qa_pairs`中的`short_answers`，不生成新内容
+2. **格式统一**: "若问题A则答案1；若问题B则答案2"的枚举格式
+3. **信息完整性**: 保持原始答案的准确性和完整性
+4. **可追溯性**: 所有答案都能追溯到原始`qa_pairs`数据
+
+### 澄清问句生成策略
+1. **基于ambiguity**: 从`ambiguous_question`识别歧义点
+2. **限制数量**: 每个样本最多2个澄清问句
+3. **质量优先**: 确保问句直接针对答案差异
+4. **零生成**: 不创造新的问题内容，仅重组现有信息
+
+### 合成策略预检
+- ✅ 许可兼容：Apache-2.0与现有数据集兼容
+- ✅ 字段结构清晰：映射关系明确，无歧义
+- ✅ 零模拟保证：所有内容均可追溯到原始数据
+- ✅ 质量可控：通过枚举格式确保一致性
+
+---
+
+## 长答案合成策略 v1（ASQA）
+
+### 总体策略
+- **目标**: 将长答案问题转化为需要澄清的答案枚举
+- **输入**: ASQA的`ambiguous_question`、`qa_pairs`、`long_answer`
+- **零模拟**: 仅基于原始数据进行字段映射和答案枚举
+
+### 缺口识别逻辑
+1. **歧义识别**: 从`ambiguous_question`识别多重解释可能
+2. **答案多样性**: 分析`qa_pairs`中的不同答案选项
+3. **信息密度**: 识别`long_answer`中的关键信息点
+
+### 澄清问句生成
+- **数量**: 1-2个核心澄清问句
+- **质量标准**: 直接针对答案差异的关键问题
+- **示例**:
+  - 输入问题: "What type of radiation is used in x rays?"
+  - 澄清问句: "What general type of radiation is used in x rays?" + "What are the two types of radiation used to produce x rays?"
+
+### 答案枚举策略
+- **格式**: "若问题A则答案1；若问题B则答案2"的枚举形式
+- **内容**: 严格使用`qa_pairs.short_answers`，不添加新信息
+- **完整性**: 确保覆盖所有主要答案选项
