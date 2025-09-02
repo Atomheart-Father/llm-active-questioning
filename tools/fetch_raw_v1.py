@@ -142,6 +142,69 @@ class RawDataFetcher:
             print("Please ensure you have internet connection and required permissions")
             return []
 
+    def fetch_hotpotqa(self, count: int, output_dir: Path, seed: int = 20240902) -> List[Dict[str, Any]]:
+        """Fetch HotpotQA dataset samples."""
+        print(f"Loading HotpotQA dataset from hotpotqa/hotpot_qa (distractor config)...")
+
+        try:
+            # Load the HotpotQA dataset
+            dataset = load_dataset("hotpotqa/hotpot_qa", "distractor", split="train")
+
+            # Select first 'count' samples without shuffle for reproducibility
+            selected_dataset = dataset.select(range(min(count, len(dataset))))
+
+            samples = []
+            for item in selected_dataset:
+                sample = {
+                    "id": item.get("_id", ""),
+                    "question": item.get("question", ""),
+                    "answer": item.get("answer", ""),
+                    "context": item.get("context", []),
+                    "supporting_facts": item.get("supporting_facts", []),
+                    "level": item.get("level", ""),
+                    "type": item.get("type", "")
+                }
+                samples.append(sample)
+
+            print(f"Successfully loaded {len(samples)} HotpotQA samples")
+            return samples
+
+        except Exception as e:
+            print(f"Error loading HotpotQA dataset: {e}")
+            print("Please ensure you have internet connection and required permissions")
+            return []
+
+    def fetch_asqa(self, count: int, output_dir: Path, seed: int = 20240902) -> List[Dict[str, Any]]:
+        """Fetch ASQA dataset samples."""
+        print(f"Loading ASQA dataset from din0s/asqa...")
+
+        try:
+            # Load the ASQA dataset
+            dataset = load_dataset("din0s/asqa", split="train")
+
+            # Select first 'count' samples without shuffle for reproducibility
+            selected_dataset = dataset.select(range(min(count, len(dataset))))
+
+            samples = []
+            for item in selected_dataset:
+                sample = {
+                    "sample_id": item.get("sample_id", ""),
+                    "ambiguous_question": item.get("ambiguous_question", ""),
+                    "annotations": item.get("annotations", []),
+                    "wikipages": item.get("wikipages", []),
+                    "qa_pairs": item.get("qa_pairs", []),
+                    "disambiguations": item.get("disambiguations", [])
+                }
+                samples.append(sample)
+
+            print(f"Successfully loaded {len(samples)} ASQA samples")
+            return samples
+
+        except Exception as e:
+            print(f"Error loading ASQA dataset: {e}")
+            print("Please ensure you have internet connection and required permissions")
+            return []
+
     def save_samples(self, samples: List[Dict[str, Any]], output_file: Path):
         """Save samples to JSON file."""
         output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -182,7 +245,13 @@ class RawDataFetcher:
             created_at = datetime.now().isoformat()
 
             for sample in samples:
-                source_id = sample.get("id", "unknown")
+                # Handle different ID field names for different datasets
+                if source_dataset == "hotpotqa":
+                    source_id = sample.get("_id", "unknown")
+                elif source_dataset == "asqa":
+                    source_id = sample.get("sample_id", "unknown")
+                else:
+                    source_id = sample.get("id", "unknown")
                 uid = self.generate_uid(source_dataset, source_id)
 
                 # Skip if already exists
@@ -233,7 +302,11 @@ class RawDataFetcher:
         if dataset_name.lower() == "ambigqa":
             samples = self.fetch_ambigqa(count, output_file.parent, seed, skip)
         elif dataset_name.lower() == "gsm8k":
-            samples = self.fetch_gsm8k(count, output_file.parent, seed, skip)
+            samples = self.fetch_gsm8k(count, output_file.parent, seed)
+        elif dataset_name.lower() == "hotpotqa":
+            samples = self.fetch_hotpotqa(count, output_file.parent, seed)
+        elif dataset_name.lower() == "asqa":
+            samples = self.fetch_asqa(count, output_file.parent, seed)
         else:
             print(f"Fetching method not implemented for {dataset_name}")
             return False
