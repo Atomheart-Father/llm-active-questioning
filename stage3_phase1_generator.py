@@ -20,7 +20,7 @@ from src.utils.config import get_config
 from src.utils.logging import get_logger
 from src.data_preparation.advanced_prompt_templates import AdvancedPromptTemplates, ReasoningType
 from src.evaluation.quality_scorer import QualityScorer, QuestionType
-from gemini_integration import GeminiDataGenerator
+# REMOVED: from gemini_integration import GeminiDataGenerator
 
 
 class Phase1DataGenerator:
