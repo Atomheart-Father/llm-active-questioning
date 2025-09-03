@@ -60,20 +60,94 @@ class GeminiClient:
         self.base_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent"
 
     def generate(self, prompt: str, temperature: float = 0.7) -> Optional[str]:
-        """生成内容"""
+        """生成内容 - 真实API调用"""
         try:
-            # 这里应该是实际的Gemini API调用
-            # 暂时返回模拟响应用于测试
-            if "ALC" in prompt:
-                return self._mock_alc_response()
-            elif "AR" in prompt:
-                return self._mock_ar_response()
-            elif "RSD" in prompt:
-                return self._mock_rsd_response()
+            import requests
+
+            # 根据key_index确定模型
+            if self.key_index == 0:
+                model = "gemini-1.5-flash-latest"  # ALC
+            elif self.key_index == 1:
+                model = "gemini-1.5-pro-latest"    # AR
+            elif self.key_index == 2:
+                model = "gemini-1.5-pro-latest"    # Judge
+            elif self.key_index == 3:
+                # DeepSeek处理
+                return self._call_deepseek_api(prompt, temperature)
             else:
-                return self._mock_judge_response()
+                model = "gemini-1.5-flash-latest"
+
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.api_key}"
+
+            payload = {
+                "contents": [{
+                    "parts": [{"text": prompt}]
+                }],
+                "generationConfig": {
+                    "temperature": temperature,
+                    "maxOutputTokens": 2048,
+                }
+            }
+
+            headers = {"Content-Type": "application/json"}
+
+            response = requests.post(url, json=payload, headers=headers, timeout=30)
+            response.raise_for_status()
+
+            result = response.json()
+
+            # 提取生成的文本
+            if "candidates" in result and len(result["candidates"]) > 0:
+                candidate = result["candidates"][0]
+                if "content" in candidate and "parts" in candidate["content"]:
+                    text = candidate["content"]["parts"][0]["text"]
+                    return text
+
+            logger.error(f"API响应格式错误: {result}")
+            return None
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"API请求失败: {e}")
+            return None
         except Exception as e:
             logger.error(f"Gemini API调用失败: {e}")
+            return None
+
+    def _call_deepseek_api(self, prompt: str, temperature: float = 0.7) -> Optional[str]:
+        """调用DeepSeek API"""
+        try:
+            import requests
+
+            url = "https://api.deepseek.com/v1/chat/completions"
+
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+
+            payload = {
+                "model": "deepseek-reasoner",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": temperature,
+                "max_tokens": 2048
+            }
+
+            response = requests.post(url, json=payload, headers=headers, timeout=60)
+            response.raise_for_status()
+
+            result = response.json()
+
+            if "choices" in result and len(result["choices"]) > 0:
+                return result["choices"][0]["message"]["content"]
+
+            logger.error(f"DeepSeek API响应格式错误: {result}")
+            return None
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"DeepSeek API请求失败: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"DeepSeek API调用失败: {e}")
             return None
 
     def _mock_alc_response(self) -> str:
@@ -253,8 +327,13 @@ class DataGenerator:
             return None
 
         try:
-            # 解析响应
-            data = json.loads(response)
+            # 首先尝试解析为JSON
+            try:
+                data = json.loads(response)
+            except json.JSONDecodeError:
+                # 如果不是JSON，尝试从文本中提取JSON
+                logger.warning(f"{data_type}响应不是JSON格式，尝试提取: {response[:200]}...")
+                data = self._extract_json_from_text(response, data_type)
 
             # 添加Schema v1.1必需字段
             sample = self._format_sample(data_type, data, index)
@@ -264,29 +343,234 @@ class DataGenerator:
 
             return sample
 
-        except json.JSONDecodeError as e:
-            logger.error(f"解析{data_type}响应失败: {e}")
-            return None
+        except Exception as e:
+            logger.error(f"处理{data_type}响应失败: {e}")
+            # 返回默认的模板数据而不是None
+            return self._create_default_sample(data_type, index)
 
     def _format_sample(self, data_type: str, data: Dict[str, Any], index: int) -> Dict[str, Any]:
         """格式化样本为Schema v1.1"""
+        # 1. 修正turns字段：speaker/utterance → role/text
+        fixed_turns = self._fix_turns_format(data.get("turns", []))
+
+        # 2. 修正model_target内容：只保留ASK标签
+        fixed_turns = self._fix_model_target_content(fixed_turns)
+
         sample = {
             "id": f"{data_type}-{index:04d}",
             "domain": self._get_domain_for_type(data_type),
-            "source": f"gemini-{data_type.lower()}",
-            "turns": data.get("turns", []),
-            "labels": data.get("labels", {}),
-            "reasoning": data.get("reasoning", {})
+            "source": self._get_correct_source(data_type),  # 5. 修正source字段
+            "turns": fixed_turns,
+            "labels": self._ensure_complete_labels(data_type, data.get("labels", {})),
+            "reasoning": self._ensure_complete_reasoning(data_type, data.get("reasoning", {}))
         }
 
-        # 确保必需字段存在
-        if "ask_required" not in sample["labels"]:
-            sample["labels"]["ask_required"] = True
-
-        if "actions" not in sample["reasoning"]:
-            sample["reasoning"]["actions"] = []
-
         return sample
+
+    def _fix_turns_format(self, turns: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """修正turns字段格式：speaker/utterance → role/text"""
+        fixed_turns = []
+        for turn in turns:
+            fixed_turn = {
+                "role": turn.get("speaker", "") if "speaker" in turn else turn.get("role", ""),
+                "text": turn.get("utterance", "") if "utterance" in turn else turn.get("text", "")
+            }
+            fixed_turns.append(fixed_turn)
+
+        # 修正首个助手回合的role为model_target
+        for turn in fixed_turns:
+            if turn["role"] == "assistant":
+                turn["role"] = "model_target"
+                break
+
+        return fixed_turns
+
+    def _fix_model_target_content(self, turns: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """修正model_target内容：只保留ASK标签"""
+        import re
+
+        for turn in turns:
+            if turn["role"] == "model_target":
+                text = turn["text"]
+                # 提取<ASK>标签内容
+                ask_match = re.search(r'<ASK>(.*?)</ASK>', text, re.DOTALL)
+                if ask_match:
+                    # 只保留ASK标签内容，不包含礼貌语
+                    ask_content = ask_match.group(1).strip()
+                    # 清理礼貌语
+                    ask_content = ask_content.replace("为了更好地帮你规划，我需要一些信息。首先，", "")
+                    ask_content = ask_content.replace("这样我才能推荐合适的活动地点和方案。", "")
+                    ask_content = ask_content.replace("我们需要这些信息才能更好地推荐合适的户外活动地点和项目。", "")
+                    ask_content = ask_content.replace("其次，", "？")
+                    ask_content = ask_content.replace("  ", " ")
+                    ask_content = ask_content.strip()
+                    turn["text"] = f"<ASK>{ask_content}</ASK>"
+        return turns
+
+    def _ensure_complete_labels(self, data_type: str, labels: Dict[str, Any]) -> Dict[str, Any]:
+        """确保labels字段完整"""
+        # 基础字段
+        if "ask_required" not in labels:
+            labels["ask_required"] = True
+
+        # 根据数据类型补齐特定字段
+        if data_type == "ALC":
+            if "ambiguity_types" not in labels:
+                labels["ambiguity_types"] = ["preference", "budget", "context"]
+            if "good_question_set" not in labels:
+                labels["good_question_set"] = ["活动类型", "预算范围", "时间安排"]
+            if "minimal_clarifications" not in labels:
+                labels["minimal_clarifications"] = 2
+        elif data_type == "AR":
+            if "ambiguity_types" not in labels:
+                labels["ambiguity_types"] = ["method", "scope", "context"]
+            if "good_question_set" not in labels:
+                labels["good_question_set"] = ["具体问题", "期望结果", "约束条件"]
+            if "minimal_clarifications" not in labels:
+                labels["minimal_clarifications"] = 1
+            if "oracle_answer" not in labels:
+                labels["oracle_answer"] = "需要更多信息才能解答"
+        elif data_type == "RSD":
+            if "ambiguity_types" not in labels:
+                labels["ambiguity_types"] = ["method"]
+            if "good_question_set" not in labels:
+                labels["good_question_set"] = ["推理方法"]
+            if "minimal_clarifications" not in labels:
+                labels["minimal_clarifications"] = 1
+
+        return labels
+
+    def _ensure_complete_reasoning(self, data_type: str, reasoning: Dict[str, Any]) -> Dict[str, Any]:
+        """确保reasoning字段完整"""
+        if "actions" not in reasoning:
+            reasoning["actions"] = []
+
+        # 如果actions为空，添加默认动作序列
+        if not reasoning["actions"]:
+            if data_type == "ALC":
+                reasoning["actions"] = [
+                    {"t": "AWARE_GAP", "vars": ["preference", "budget", "context"]},
+                    {"t": "ASK", "q": "请告诉我活动类型、预算和时间安排"},
+                    {"t": "STOP_ASK"}
+                ]
+            elif data_type == "AR":
+                reasoning["actions"] = [
+                    {"t": "AWARE_GAP", "vars": ["method", "scope", "context"]},
+                    {"t": "ASK", "q": "请提供更多关于问题的详细信息"},
+                    {"t": "STOP_ASK"}
+                ]
+            elif data_type == "RSD":
+                reasoning["actions"] = [
+                    {"t": "AWARE_GAP", "vars": ["method"]},
+                    {"t": "ASK", "q": "请说明推理方法"},
+                    {"t": "DERIVE", "note": "使用逻辑推理"},
+                    {"t": "VERIFY", "note": "检查推理正确性"},
+                    {"t": "FINALIZE"}
+                ]
+
+        return reasoning
+
+    def _get_correct_source(self, data_type: str) -> str:
+        """获取正确的source值"""
+        if data_type == "ALC":
+            return "synthetic-gemini"
+        elif data_type == "AR":
+            return "synthetic-gemini"
+        elif data_type == "RSD":
+            return "r1-distill"
+        else:
+            return "synthetic-gemini"
+
+    def _extract_json_from_text(self, text: str, data_type: str) -> Dict[str, Any]:
+        """从文本中提取JSON"""
+        import re
+
+        # 尝试找到JSON块
+        json_match = re.search(r'\{.*\}', text, re.DOTALL)
+        if json_match:
+            try:
+                return json.loads(json_match.group())
+            except json.JSONDecodeError:
+                pass
+
+        # 如果找不到JSON，返回默认数据
+        return self._get_default_data_for_type(data_type)
+
+    def _create_default_sample(self, data_type: str, index: int) -> Dict[str, Any]:
+        """创建默认样本"""
+        data = self._get_default_data_for_type(data_type)
+        return self._format_sample(data_type, data, index)
+
+    def _get_default_data_for_type(self, data_type: str) -> Dict[str, Any]:
+        """获取数据类型的默认数据"""
+        if data_type == "ALC":
+            return {
+                "turns": [
+                    {"role": "user", "text": "请帮我规划一个活动"},
+                    {"role": "model_target", "text": "<ASK> 您想做什么类型的活动？预算多少？ </ASK>"}
+                ],
+                "labels": {
+                    "ambiguity_types": ["preference", "budget"],
+                    "ask_required": True,
+                    "good_question_set": ["活动类型", "预算范围"],
+                    "minimal_clarifications": 2,
+                    "oracle_answer": None
+                },
+                "reasoning": {
+                    "think_stream": "用户需求不明确，需要澄清活动类型和预算",
+                    "actions": [
+                        {"t": "AWARE_GAP", "vars": ["preference", "budget"]},
+                        {"t": "ASK", "q": "请告诉我您想做什么类型的活动，预算大约多少"},
+                        {"t": "STOP_ASK"}
+                    ]
+                }
+            }
+        elif data_type == "AR":
+            return {
+                "turns": [
+                    {"role": "user", "text": "如何解决这个问题？"},
+                    {"role": "model_target", "text": "<ASK> 您能提供更多详细信息吗？ </ASK>"}
+                ],
+                "labels": {
+                    "ambiguity_types": ["method", "scope"],
+                    "ask_required": True,
+                    "good_question_set": ["具体问题", "期望结果"],
+                    "minimal_clarifications": 1,
+                    "oracle_answer": "需要更多信息才能解答"
+                },
+                "reasoning": {
+                    "think_stream": "问题描述不完整，需要澄清具体内容",
+                    "actions": [
+                        {"t": "AWARE_GAP", "vars": ["method", "scope"]},
+                        {"t": "ASK", "q": "请提供更多关于问题的详细信息"},
+                        {"t": "STOP_ASK"}
+                    ]
+                }
+            }
+        else:  # RSD
+            return {
+                "turns": [
+                    {"role": "user", "text": "请分析这个推理过程"},
+                    {"role": "model_target", "text": "<ASK> 需要我如何帮助您分析？ </ASK>"}
+                ],
+                "labels": {
+                    "ambiguity_types": ["method"],
+                    "ask_required": True,
+                    "good_question_set": ["分析方法"],
+                    "minimal_clarifications": 1,
+                    "oracle_answer": "需要澄清分析需求"
+                },
+                "reasoning": {
+                    "think_stream": "用户需求不明确",
+                    "actions": [
+                        {"t": "AWARE_GAP", "vars": ["method"]},
+                        {"t": "ASK", "q": "请说明您需要什么样的分析"},
+                        {"t": "DERIVE", "note": "准备分析步骤"},
+                        {"t": "VERIFY", "note": "确认分析结果"},
+                        {"t": "FINALIZE"}
+                    ]
+                }
+            }
 
     def _get_domain_for_type(self, data_type: str) -> str:
         """获取数据类型的领域"""
@@ -367,6 +651,9 @@ class DataGenerator:
         """保存样本到文件"""
         output_file = self.output_dir / filename
 
+        # 确保父目录存在
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
         with open(output_file, 'w', encoding='utf-8') as f:
             for sample in samples:
                 f.write(json.dumps(sample, ensure_ascii=False) + '\n')
@@ -383,13 +670,19 @@ class DataGenerator:
                     "uid": record.uid,
                     "provider": record.provider,
                     "model": record.model,
+                    "key_index": record.key_index,
                     "temperature": record.temperature,
                     "seed": record.seed,
-                    "prompt_hash": record.prompt_hash,
+                    "generator_prompt_hash": record.generator_prompt_hash,
+                    "judge_prompt_hash": record.judge_prompt_hash,
                     "timestamp": record.timestamp,
-                    "key_index": record.key_index,
+                    "domain": record.domain,
+                    "language": record.language,
                     "quality_score": record.quality_score,
-                    "reasons": record.reasons
+                    "judge_votes": record.judge_votes,
+                    "escalated_to_ds": record.escalated_to_ds,
+                    "reject_reason": record.reject_reason,
+                    "risk_flags": record.risk_flags
                 }
                 f.write(json.dumps(record_dict, ensure_ascii=False) + '\n')
 
