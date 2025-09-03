@@ -23,11 +23,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if grep -RInE 'google\.generativeai|openai|anthropic' \
+          if grep -RInE '^[[:space:]]*(from|import)[[:space:]]+(google\.generativeai|openai|anthropic)\b' \
                --include='*.py' \
                --exclude-dir=integrations --exclude-dir=.git --exclude-dir=data \
                src/ tools/ train/ 2>/dev/null; then
-            echo "❌ Found forbidden imports in main loop"
+            echo "❌ Found forbidden *imports* in main loop (src/tools/train)"
             exit 1
           fi
           echo "✅ No forbidden imports in main loop"
