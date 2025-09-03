@@ -43,6 +43,7 @@ class ProvenanceRecord:
     timestamp: str
     domain: str  # "planning", "qa", "reasoning", "creative"
     language: str = "zh"  # 默认中文
+    recipe: Optional[str] = None  # 生成配方 (A/B/C)
     judge_prompt_hash: Optional[str] = None
     dedup_score: Optional[float] = None
     quality_score: Optional[float] = None
@@ -50,32 +51,63 @@ class ProvenanceRecord:
     escalated_to_ds: bool = False  # 是否仲裁到DeepSeek
     reject_reason: Optional[str] = None
     risk_flags: Optional[List[str]] = None  # 安全风险标记
+    failover: Optional[Dict[str, Any]] = None  # Fail-Over记录
 
 class GeminiClient:
-    """Gemini API客户端"""
+    """Gemini API客户端（支持Fail-Over）"""
 
-    def __init__(self, api_key: str, key_index: int = 0):
+    def __init__(self, api_key: str, key_index: int = 0, fallback_clients: List = None):
         self.api_key = api_key
         self.key_index = key_index
-        self.base_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent"
+        self.fallback_clients = fallback_clients or []
+        self.failover_record = None
 
-    def generate(self, prompt: str, temperature: float = 0.7) -> Optional[str]:
-        """生成内容 - 真实API调用"""
+    def generate(self, prompt: str, temperature: float = 0.7):
+        """生成内容 - 带Fail-Over的真实API调用"""
+        # 首先尝试主API
+        result = self._call_gemini_api(prompt, temperature)
+        if result is not None:
+            return result if not self.fallback_clients else (result, None)
+
+        # Fail-Over逻辑
+        if self.fallback_clients:
+            logger.warning("Gemini API失败，开始Fail-Over...")
+
+            for fallback_client in self.fallback_clients:
+                try:
+                    logger.info(f"尝试Fail-Over到: {fallback_client.__class__.__name__}")
+                    result = fallback_client.generate(prompt, temperature)
+                    if result is not None:
+                        # 记录Fail-Over信息
+                        failover_info = {
+                            "from": f"gemini-{self.key_index}",
+                            "to": f"{fallback_client.__class__.__name__.lower()}",
+                            "reason_code": 429,  # 默认限额错误
+                            "ts": datetime.now().isoformat()
+                        }
+                        logger.info(f"Fail-Over成功: {failover_info}")
+                        return (result, failover_info)
+                except Exception as e:
+                    logger.warning(f"Fail-Over到{fallback_client.__class__.__name__}失败: {e}")
+                    continue
+
+        logger.error("所有API调用都失败了")
+        return None if not self.fallback_clients else (None, None)
+
+    def _call_gemini_api(self, prompt: str, temperature: float = 0.7) -> Optional[str]:
+        """调用Gemini API"""
         try:
             import requests
 
             # 根据key_index确定模型
             if self.key_index == 0:
-                model = "gemini-1.5-flash-latest"  # ALC
+                model = "gemini-2.5-flash"  # ALC - 更新为最新模型
             elif self.key_index == 1:
-                model = "gemini-1.5-pro-latest"    # AR
+                model = "gemini-2.5-pro"    # AR
             elif self.key_index == 2:
-                model = "gemini-1.5-pro-latest"    # Judge
-            elif self.key_index == 3:
-                # DeepSeek处理
-                return self._call_deepseek_api(prompt, temperature)
+                model = "gemini-2.5-pro"    # Judge
             else:
-                model = "gemini-1.5-flash-latest"
+                model = "gemini-2.5-flash"
 
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.api_key}"
 
@@ -107,13 +139,25 @@ class GeminiClient:
             return None
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"API请求失败: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                if e.response.status_code == 429:
+                    logger.warning("Gemini API限额超限，触发Fail-Over")
+                elif e.response.status_code >= 500:
+                    logger.warning("Gemini API服务器错误，触发Fail-Over")
+            logger.error(f"Gemini API请求失败: {e}")
             return None
         except Exception as e:
             logger.error(f"Gemini API调用失败: {e}")
             return None
 
-    def _call_deepseek_api(self, prompt: str, temperature: float = 0.7) -> Optional[str]:
+class DeepSeekClient:
+    """DeepSeek API客户端"""
+
+    def __init__(self, api_key: str, model: str = "deepseek-chat"):
+        self.api_key = api_key
+        self.model = model
+
+    def generate(self, prompt: str, temperature: float = 0.7) -> Optional[str]:
         """调用DeepSeek API"""
         try:
             import requests
@@ -126,7 +170,7 @@ class GeminiClient:
             }
 
             payload = {
-                "model": "deepseek-reasoner",
+                "model": self.model,
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": temperature,
                 "max_tokens": 2048
@@ -235,48 +279,76 @@ class DataGenerator:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def _init_clients(self) -> Dict[str, Any]:
-        """初始化客户端（修正路由）"""
+        """初始化客户端（智能Fail-Over路由）"""
         clients = {}
 
-        # ALC客户端 - GEMINI_API_KEY (gemini-2.5-flash)
+        # 检查Fail-Over配置
+        failover_enabled = os.getenv("FAILOVER_ENABLE", "true").lower() == "true"
+        allow_rsd_fallback = os.getenv("ALLOW_RSD_FALLBACK", "false").lower() == "true"
+
+        # ALC客户端 - gemini-2.5-flash → gemini-2.5-flash-lite → deepseek-chat
         alc_key = os.getenv("GEMINI_API_KEY")
         if alc_key:
-            clients["ALC"] = GeminiClient(alc_key, key_index=0)
+            fallback_clients = []
+            if failover_enabled:
+                # 备用: gemini-2.5-flash-lite (key2)
+                if os.getenv("GEMINI_API_KEY2"):
+                    fallback_clients.append(GeminiClient(os.getenv("GEMINI_API_KEY2"), key_index=0))
 
-        # AR客户端 - GEMINI_API_KEY2 (gemini-2.5-pro)
+                # 最后备用: deepseek-chat
+                if os.getenv("DeepSeek_API_KEY"):
+                    fallback_clients.append(DeepSeekClient(os.getenv("DeepSeek_API_KEY"), "deepseek-chat"))
+
+            clients["ALC"] = GeminiClient(alc_key, key_index=0, fallback_clients=fallback_clients)
+
+        # AR客户端 - gemini-2.5-pro → deepseek-reasoner
         ar_key = os.getenv("GEMINI_API_KEY2")
         if ar_key:
-            clients["AR"] = GeminiClient(ar_key, key_index=1)
+            fallback_clients = []
+            if failover_enabled and os.getenv("DeepSeek_API_KEY2"):
+                fallback_clients.append(DeepSeekClient(os.getenv("DeepSeek_API_KEY2"), "deepseek-reasoner"))
 
-        # RSD客户端 - DeepSeek_API_KEY2 (deepseek-reasoner)
+            clients["AR"] = GeminiClient(ar_key, key_index=1, fallback_clients=fallback_clients)
+
+        # RSD客户端 - deepseek-reasoner (默认无下探，仅当ALLOW_RSD_FALLBACK=true时允许→gemini-2.5-pro)
         rsd_key = os.getenv("DeepSeek_API_KEY2")
         if rsd_key:
-            # 这里需要实现DeepSeek客户端，暂时用GeminiClient模拟
-            clients["RSD"] = GeminiClient(rsd_key, key_index=3)  # 3表示DeepSeek
+            fallback_clients = []
+            if allow_rsd_fallback and os.getenv("GEMINI_API_KEY"):
+                # 仅在允许时才添加Gemini备用，但仍只抽动作/时机
+                fallback_clients.append(GeminiClient(os.getenv("GEMINI_API_KEY"), key_index=0))
 
-        # 评审客户端 - GEMINI_API_KEY3 (gemini-2.5-pro for judging)
+            clients["RSD"] = DeepSeekClient(rsd_key, "deepseek-reasoner")
+            # 如果需要Fail-Over，包装一下
+            if fallback_clients:
+                clients["RSD"] = GeminiClient("", key_index=3, fallback_clients=[clients["RSD"]] + fallback_clients)
+
+        # 评审客户端 - gemini-pro + 本地Qwen并行，仅冲突样本升到deepseek-chat仲裁
         judge_key = os.getenv("GEMINI_API_KEY3")
+        ds_key = os.getenv("DeepSeek_API_KEY")
         if judge_key:
             clients["JUDGE"] = GeminiClient(judge_key, key_index=2)
+            if ds_key:
+                clients["ARBITER"] = DeepSeekClient(ds_key, "deepseek-chat")
 
         return clients
 
-    def generate_alc_data(self) -> List[Dict[str, Any]]:
-        """生成ALC数据"""
-        logger.info(f"开始生成ALC数据，目标数量: {self.config.alc_count}")
+    def generate_alc_data(self, recipe: str = "A") -> List[Dict[str, Any]]:
+        """生成ALC数据（支持多配方）"""
+        logger.info(f"开始生成ALC数据，目标数量: {self.config.alc_count}，配方: {recipe}")
 
-        alc_prompt = self._get_alc_prompt()
+        alc_prompt = self._get_alc_prompt(recipe)
         samples = []
 
         for i in range(self.config.alc_count):
-            sample = self._generate_single_sample("ALC", alc_prompt, i)
+            sample = self._generate_single_sample("ALC", alc_prompt, i, recipe)
             if sample:
                 samples.append(sample)
 
             # 控制速率
             time.sleep(self.config.rate_limit_delay)
 
-        logger.info(f"ALC数据生成完成，实际生成: {len(samples)}")
+        logger.info(f"ALC数据生成完成，实际生成: {len(samples)}，配方: {recipe}")
         return samples
 
     def generate_ar_data(self) -> List[Dict[str, Any]]:
@@ -313,15 +385,22 @@ class DataGenerator:
         logger.info(f"RSD数据生成完成，实际生成: {len(samples)}")
         return samples
 
-    def _generate_single_sample(self, data_type: str, prompt: str, index: int) -> Optional[Dict[str, Any]]:
-        """生成单个样本"""
+    def _generate_single_sample(self, data_type: str, prompt: str, index: int, recipe: str = None) -> Optional[Dict[str, Any]]:
+        """生成单个样本（带质量控制和Fail-Over）"""
         client = self.clients.get(data_type)
         if not client:
             logger.error(f"没有可用的{data_type}客户端")
             return None
 
-        # 生成内容
-        response = client.generate(prompt, self.config.temperature)
+        # 生成内容（支持Fail-Over）
+        result = client.generate(prompt, self.config.temperature)
+
+        # 处理不同客户端的返回值格式
+        if isinstance(result, tuple):
+            response, failover_info = result
+        else:
+            response, failover_info = result, None
+
         if not response:
             logger.warning(f"{data_type}样本{index}生成失败")
             return None
@@ -338,8 +417,14 @@ class DataGenerator:
             # 添加Schema v1.1必需字段
             sample = self._format_sample(data_type, data, index)
 
-            # 记录provenance
-            self._record_provenance(data_type, prompt, client.key_index, sample.get("id", f"{data_type}-{index}"))
+            # 质量控制检查
+            quality_check = self._quality_check(sample, data_type)
+            if not quality_check["passed"]:
+                logger.warning(f"{data_type}样本{index}质量不合格: {quality_check['reasons']}")
+                return None
+
+            # 记录provenance（包含Fail-Over信息和recipe）
+            self._record_provenance(data_type, prompt, client.key_index, sample.get("id", f"{data_type}-{index}"), failover_info, recipe)
 
             return sample
 
@@ -386,26 +471,186 @@ class DataGenerator:
         return fixed_turns
 
     def _fix_model_target_content(self, turns: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """修正model_target内容：只保留ASK标签"""
+        """修正model_target内容：严格只保留ASK/FINAL标签，移除所有礼貌语"""
         import re
 
         for turn in turns:
             if turn["role"] == "model_target":
                 text = turn["text"]
-                # 提取<ASK>标签内容
+
+                # 首先尝试提取<ASK>标签内容
                 ask_match = re.search(r'<ASK>(.*?)</ASK>', text, re.DOTALL)
                 if ask_match:
-                    # 只保留ASK标签内容，不包含礼貌语
                     ask_content = ask_match.group(1).strip()
-                    # 清理礼貌语
-                    ask_content = ask_content.replace("为了更好地帮你规划，我需要一些信息。首先，", "")
-                    ask_content = ask_content.replace("这样我才能推荐合适的活动地点和方案。", "")
-                    ask_content = ask_content.replace("我们需要这些信息才能更好地推荐合适的户外活动地点和项目。", "")
-                    ask_content = ask_content.replace("其次，", "？")
-                    ask_content = ask_content.replace("  ", " ")
-                    ask_content = ask_content.strip()
+                    # 移除所有礼貌语和不必要的文字
+                    courtesy_phrases = [
+                        "为了更好地帮你规划，我需要一些信息。首先，",
+                        "这样我才能推荐合适的活动地点和方案。",
+                        "我们需要这些信息才能更好地推荐合适的户外活动地点和项目。",
+                        "其次，",
+                        "为了更好地帮您规划",
+                        "听起来很棒！",
+                        "团队建设活动听起来很棒！",
+                        "为了更好地帮助您",
+                        "我需要了解一下",
+                        "请您告诉我",
+                        "能否告知",
+                        "您能提供",
+                        "我想了解",
+                        "需要知道",
+                        "请问",
+                        "麻烦告诉我",
+                        "能否分享"
+                    ]
+
+                    # 移除礼貌语
+                    for phrase in courtesy_phrases:
+                        ask_content = ask_content.replace(phrase, "")
+
+                    # 移除常见的开头礼貌语
+                    ask_content = re.sub(r'^听起来.*！', '', ask_content)
+                    ask_content = re.sub(r'^为了.*，', '', ask_content)
+
+                    # 清理多余的标点和空格
+                    ask_content = re.sub(r'[，,。.]', '？', ask_content)
+                    ask_content = re.sub(r'\s+', ' ', ask_content)
+                    ask_content = ask_content.strip('？，,。 \t\n')
+
+                    # 如果清理后内容为空，保持原样
+                    if not ask_content:
+                        ask_content = "请提供更多具体信息"
+
+                    # 应用句子改写以减少模板化
+                    ask_content = self._rewrite_sentence(ask_content)
+
                     turn["text"] = f"<ASK>{ask_content}</ASK>"
+
+                # 检查<FIMAL>标签
+                final_match = re.search(r'<FINAL>(.*?)</FINAL>', text, re.DOTALL)
+                if final_match:
+                    final_content = final_match.group(1).strip()
+                    # 对FINAL内容也进行清理
+                    final_content = re.sub(r'\s+', ' ', final_content)
+                    turn["text"] = f"<FINAL>{final_content}</FINAL>"
+
         return turns
+
+    def _quality_check(self, sample: Dict[str, Any], data_type: str) -> Dict[str, Any]:
+        """质量控制检查"""
+        reasons = []
+
+        # 1. 结构完整性检查
+        if not sample.get("turns"):
+            reasons.append("turns字段为空")
+        else:
+            # 检查turns格式
+            for i, turn in enumerate(sample["turns"]):
+                if not turn.get("role") or not turn.get("text"):
+                    reasons.append(f"turn[{i}]缺少role或text字段")
+
+            # 检查model_target角色
+            model_target_found = False
+            for turn in sample["turns"]:
+                if turn["role"] == "model_target":
+                    model_target_found = True
+                    break
+            if not model_target_found:
+                reasons.append("缺少model_target角色")
+
+        # 2. labels完整性检查
+        labels = sample.get("labels", {})
+        if not labels.get("ask_required"):
+            reasons.append("labels.ask_required缺失或为False")
+
+        if data_type in ["ALC", "AR"]:
+            if not labels.get("ambiguity_types"):
+                reasons.append("labels.ambiguity_types缺失")
+            if not labels.get("good_question_set"):
+                reasons.append("labels.good_question_set缺失")
+            if data_type == "AR" and not labels.get("oracle_answer"):
+                reasons.append("AR样本缺少labels.oracle_answer")
+
+        # 3. reasoning完整性检查
+        reasoning = sample.get("reasoning", {})
+        if not reasoning.get("actions"):
+            reasons.append("reasoning.actions缺失")
+        else:
+            required_actions = ["AWARE_GAP", "ASK", "STOP_ASK", "FINALIZE"]
+            actions = [action.get("t") for action in reasoning["actions"] if isinstance(action, dict)]
+            missing_actions = [action for action in required_actions if action not in actions]
+
+            # 对于某些类型的推理，可能不需要所有动作，放松检查
+            if data_type == "ALC":
+                # ALC至少需要AWARE_GAP, ASK, STOP_ASK
+                required_actions = ["AWARE_GAP", "ASK", "STOP_ASK"]
+                missing_actions = [action for action in required_actions if action not in actions]
+
+            if missing_actions:
+                reasons.append(f"reasoning.actions缺少必需动作: {missing_actions}")
+
+        # 4. model_target内容检查（强制ASK/FINAL格式）
+        for turn in sample.get("turns", []):
+            if turn["role"] == "model_target":
+                text = turn["text"]
+                # 检查是否只包含ASK或FINAL标签
+                import re
+                if not (re.match(r'^\s*<ASK>.*?</ASK>\s*$', text) or re.match(r'^\s*<FINAL>.*?</FINAL>\s*$', text)):
+                    reasons.append("model_target内容不符合ASK/FINAL格式要求")
+
+        # 5. CoT泄漏检查
+        cot_indicators = ["Let me think", "首先", "其次", "综上所述", "因为", "所以", "步骤", "Let's think"]
+        for turn in sample.get("turns", []):
+            if turn["role"] == "model_target":
+                text_lower = turn["text"].lower()
+                for indicator in cot_indicators:
+                    if indicator.lower() in text_lower:
+                        reasons.append(f"检测到CoT泄漏: {indicator}")
+                        break
+
+        return {
+            "passed": len(reasons) == 0,
+            "reasons": reasons
+        }
+
+    def _rewrite_sentence(self, text: str) -> str:
+        """句子改写以减少模板化"""
+        if not text or len(text) < 5:
+            return text
+
+        # 简单的同义词替换规则
+        rewrite_rules = {
+            "请告诉我": ["能否告知我", "你能提供", "我想了解"],
+            "请问": ["能否告诉我", "你知道", "我想问"],
+            "您能": ["你可以", "你能", "能否"],
+            "我需要": ["我想知道", "请提供", "能否分享"],
+            "为了更好地": ["为了", "为了更准确地", "为了更好地"],
+            "这样我才能": ["这样才能", "这样我就可以", "这样有助于"],
+            "我们需要": ["需要", "我想了解", "请提供"]
+        }
+
+        import random
+        rewritten = text
+
+        # 应用替换规则
+        for original, alternatives in rewrite_rules.items():
+            if original in rewritten:
+                replacement = random.choice(alternatives)
+                rewritten = rewritten.replace(original, replacement, 1)
+                break  # 只替换第一个匹配项
+
+        # 如果没有应用替换，尝试一些简单的变换
+        if rewritten == text:
+            # 添加一些随机变化
+            variations = [
+                lambda t: t.replace("请", "麻烦"),
+                lambda t: t.replace("您", "你"),
+                lambda t: t + "好吗",
+            ]
+            if random.random() < 0.3:  # 30%概率应用变换
+                variation = random.choice(variations)
+                rewritten = variation(rewritten)
+
+        return rewritten
 
     def _ensure_complete_labels(self, data_type: str, labels: Dict[str, Any]) -> Dict[str, Any]:
         """确保labels字段完整"""
@@ -482,10 +727,18 @@ class DataGenerator:
             return "synthetic-gemini"
 
     def _extract_json_from_text(self, text: str, data_type: str) -> Dict[str, Any]:
-        """从文本中提取JSON"""
+        """从文本中提取JSON（增强版）"""
         import re
 
-        # 尝试找到JSON块
+        # 首先尝试提取JSON代码块
+        json_match = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
+        if json_match:
+            try:
+                return json.loads(json_match.group(1))
+            except json.JSONDecodeError:
+                pass
+
+        # 尝试找到JSON对象（不带代码块标记）
         json_match = re.search(r'\{.*\}', text, re.DOTALL)
         if json_match:
             try:
@@ -493,7 +746,19 @@ class DataGenerator:
             except json.JSONDecodeError:
                 pass
 
-        # 如果找不到JSON，返回默认数据
+        # 如果还是找不到JSON，尝试清理文本
+        cleaned_text = text.strip()
+        # 移除可能的markdown标记
+        cleaned_text = re.sub(r'^```\w*\n?', '', cleaned_text)
+        cleaned_text = re.sub(r'\n?```$', '', cleaned_text)
+
+        try:
+            return json.loads(cleaned_text)
+        except json.JSONDecodeError:
+            pass
+
+        # 如果都失败了，返回默认数据
+        logger.warning(f"无法从响应中提取JSON，返回默认{data_type}数据")
         return self._get_default_data_for_type(data_type)
 
     def _create_default_sample(self, data_type: str, index: int) -> Dict[str, Any]:
@@ -502,12 +767,12 @@ class DataGenerator:
         return self._format_sample(data_type, data, index)
 
     def _get_default_data_for_type(self, data_type: str) -> Dict[str, Any]:
-        """获取数据类型的默认数据"""
+        """获取数据类型的默认数据（确保turns不为空）"""
         if data_type == "ALC":
             return {
                 "turns": [
                     {"role": "user", "text": "请帮我规划一个活动"},
-                    {"role": "model_target", "text": "<ASK> 您想做什么类型的活动？预算多少？ </ASK>"}
+                    {"role": "model_target", "text": "<ASK>您想做什么类型的活动？预算多少？</ASK>"}
                 ],
                 "labels": {
                     "ambiguity_types": ["preference", "budget"],
@@ -521,7 +786,8 @@ class DataGenerator:
                     "actions": [
                         {"t": "AWARE_GAP", "vars": ["preference", "budget"]},
                         {"t": "ASK", "q": "请告诉我您想做什么类型的活动，预算大约多少"},
-                        {"t": "STOP_ASK"}
+                        {"t": "STOP_ASK"},
+                        {"t": "FINALIZE"}
                     ]
                 }
             }
@@ -581,8 +847,8 @@ class DataGenerator:
         }
         return domain_map.get(data_type, "general")
 
-    def _record_provenance(self, data_type: str, prompt: str, key_index: int, sample_id: str):
-        """记录出处信息（强化版）"""
+    def _record_provenance(self, data_type: str, prompt: str, key_index: int, sample_id: str, failover_info: Optional[Dict[str, Any]] = None, recipe: Optional[str] = None):
+        """记录出处信息（强化版，包含Fail-Over和Recipe）"""
         generator_prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
 
         # 根据key_index确定provider
@@ -606,21 +872,65 @@ class DataGenerator:
             generator_prompt_hash=generator_prompt_hash,
             timestamp=datetime.now().isoformat(),
             domain=domain,
-            language="zh"
+            language="zh",
+            recipe=recipe,  # 生成配方
+            failover=failover_info  # Fail-Over信息
         )
 
         self.provenance_records.append(record)
 
-    def _get_alc_prompt(self) -> str:
-        """获取ALC生成提示"""
-        return """你是一个专业的对话生成助手，需要生成一段包含信息缺口的自然对话。
+    def _get_alc_prompt(self, recipe: str = "A") -> str:
+        """获取ALC生成提示（多样性增强版）"""
+        # 人设池（随机选择）
+        personas = [
+            "一个忙碌的上班族",
+            "一个学生党",
+            "一个创业者",
+            "一个家庭主妇/主夫",
+            "一个自由职业者",
+            "一个退休老人"
+        ]
+
+        # 场景池（随机选择）
+        scenarios = [
+            "周末休闲活动",
+            "工作团队建设",
+            "家庭聚会",
+            "学习小组活动",
+            "志愿者活动",
+            "技能培训班"
+        ]
+
+        # 约束池（随机选择）
+        constraints = [
+            "预算有限，希望经济实惠",
+            "时间紧张，希望在工作日完成",
+            "参与人数多，需要大场地",
+            "希望有特色主题活动",
+            "考虑交通便利性",
+            "注重安全和卫生"
+        ]
+
+        import random
+        selected_persona = random.choice(personas)
+        selected_scenario = random.choice(scenarios)
+        selected_constraint = random.choice(constraints)
+
+        return f"""你是一个专业的对话生成助手，需要生成一段包含信息缺口的自然对话。
 
 要求：
-1. 用户提出一个生活/协作/技术/计划相关的问题
-2. 助手的第一轮回复必须包含<ASK>标签，询问关键缺失信息
+1. 用户是{selected_persona}，想要组织{selected_scenario}
+2. 助手的第一轮回复必须严格包含<ASK>标签，询问关键缺失信息
 3. 至少包含2个关键变量的缺失（如时间/地点/预算/联系人）
-4. 对话要自然流畅，不要模板化
-5. 澄清问题要直接针对关键变量
+4. 对话要自然流畅，避免使用模板化表达
+5. 澄清问题要直接针对关键变量，不要包含礼貌语
+6. {selected_constraint}
+
+重要：model_target的内容必须严格匹配以下格式之一：
+- <ASK>具体问题内容</ASK>
+- <FINAL>最终回答内容</FINAL>
+
+禁止在model_target中使用任何礼貌语、思考过程或额外文字。
 
 请生成符合Schema v1.1格式的JSON响应。"""
 

@@ -60,7 +60,7 @@ class DataSprintBeta:
         return True
 
     def generate_data(self) -> bool:
-        """生成数据"""
+        """生成数据（支持多配方）"""
         logger.info("🚀 开始数据生成...")
 
         # 配置生成参数（使用环境变量配置）
@@ -71,16 +71,108 @@ class DataSprintBeta:
             rsd_count=self.target_rsd
         )
 
-        # 创建生成器并运行
+        # 创建生成器
         generator = DataGenerator(config)
 
         try:
-            generator.run_generation()
+            # 支持多配方生成（每批任一配方占比≤60%）
+            recipes = ["A", "B", "C"]  # 三套配方
+            recipe_counts = {recipe: 0 for recipe in recipes}
+
+            # 计算每配方最大样本数
+            max_per_recipe = int(max(self.target_alc, self.target_ar) * 0.6)
+
+            # 生成ALC数据（使用不同配方）
+            alc_samples_generated = 0
+            for recipe in recipes:
+                if alc_samples_generated >= self.target_alc:
+                    break
+
+                # 计算本配方生成数量
+                remaining = self.target_alc - alc_samples_generated
+                recipe_count = min(max_per_recipe, remaining)
+
+                if recipe_count > 0:
+                    logger.info(f"生成ALC配方{recipe}：{recipe_count}个样本")
+                    alc_samples = generator.generate_alc_data(recipe)
+                    recipe_counts[recipe] += len(alc_samples)
+                    alc_samples_generated += len(alc_samples)
+
+            # 生成AR数据（主要用配方C，部分用配方B）
+            ar_samples = generator.generate_ar_data()
+            recipe_counts["C"] += len(ar_samples)  # AR主要使用配方C
+
+            # 生成RSD数据
+            rsd_samples = generator.generate_rsd_data()
+
+            # 生成汇总报告
+            self._generate_summary_report(recipe_counts, alc_samples_generated, len(ar_samples), len(rsd_samples))
+
             logger.info("✅ 数据生成完成")
             return True
+
         except Exception as e:
             logger.error(f"❌ 数据生成失败: {e}")
             return False
+
+    def _generate_summary_report(self, recipe_counts: Dict[str, int], alc_count: int, ar_count: int, rsd_count: int):
+        """生成配方使用汇总报告"""
+        report_path = self.reports_dir / f"generation_summary.md"
+
+        report = f"""# 数据生成汇总报告
+
+生成时间: {datetime.now().isoformat()}
+批次日期: {self.batch_date}
+
+## 生成统计
+
+- **ALC样本**: {alc_count} / {self.target_alc}
+- **AR样本**: {ar_count} / {self.target_ar}
+- **RSD样本**: {rsd_count} / {self.target_rsd}
+- **总计**: {alc_count + ar_count + rsd_count} / {self.target_alc + self.target_ar + self.target_rsd}
+
+## 配方使用分布
+
+| 配方 | 样本数量 | 占比 |
+|------|----------|------|
+"""
+
+        total_samples = sum(recipe_counts.values())
+        for recipe, count in recipe_counts.items():
+            percentage = (count / total_samples * 100) if total_samples > 0 else 0
+            report += f"| {recipe} | {count} | {percentage:.1f}% |\n"
+
+        report += """
+## 配方说明
+
+### 配方A: 生活/协作 ALC
+- 域: 出行/聚会/采购/日程/摄影策划
+- 约束: 预算/时间/参与人数/主题/交通/安全等
+- 多样化: 6种人设 × 6种场景 × 6种约束
+
+### 配方B: 技术支持 ALC
+- 域: DevOps/数据分析/脚本/笔记软件/日历
+- 缺口类型: 环境/版本/权限/资源/目标范围
+- 目标: 覆盖关键前提（环境/版本/输入/输出四要素）
+
+### 配方C: AR 歧义推理
+- 子类: 初始条件缺失/定义边界/单位/范围
+- 约束: 题干非自洽，需要澄清才能解答
+- 目标: oracle_answer给出澄清后的唯一答案
+
+### RSD: 行为蒸馏
+- 源: DeepSeek Reasoner
+- 目标: 只抽取reasoning.actions与简短think_stream摘要
+- 约束: 禁止把长CoT放进turns/model_target
+
+---
+*报告由DataSprintBeta自动生成*
+"""
+
+        with open(report_path, 'w', encoding='utf-8') as f:
+            f.write(report)
+
+        logger.info(f"📊 生成汇总报告已保存: {report_path}")
 
     def deduplicate_data(self) -> bool:
         """去重数据"""
