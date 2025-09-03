@@ -86,7 +86,7 @@ class DataSprintBeta:
         """去重数据"""
         logger.info("🔄 开始数据去重...")
 
-        deduplicator = DataDeduplicator(similarity_threshold=0.92)
+        deduplicator = DataDeduplicator()
 
         try:
             result = deduplicator.process_directory(str(self.output_dir))
