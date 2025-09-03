@@ -32,17 +32,24 @@ class GenerationConfig:
 
 @dataclass
 class ProvenanceRecord:
-    """出处记录"""
+    """出处记录（强化版）"""
     uid: str
-    provider: str
+    provider: str  # "google", "deepseek"
     model: str
+    key_index: int
     temperature: float
     seed: int
-    prompt_hash: str
+    generator_prompt_hash: str
     timestamp: str
-    key_index: int
+    domain: str  # "planning", "qa", "reasoning", "creative"
+    language: str = "zh"  # 默认中文
+    judge_prompt_hash: Optional[str] = None
+    dedup_score: Optional[float] = None
     quality_score: Optional[float] = None
-    reasons: Optional[str] = None
+    judge_votes: Optional[Dict[str, float]] = None  # 双评审结果
+    escalated_to_ds: bool = False  # 是否仲裁到DeepSeek
+    reject_reason: Optional[str] = None
+    risk_flags: Optional[List[str]] = None  # 安全风险标记
 
 class GeminiClient:
     """Gemini API客户端"""
@@ -146,31 +153,37 @@ class DataGenerator:
         self.config = config
         self.provenance_records: List[ProvenanceRecord] = []
 
-        # 初始化Gemini客户端
+        # 初始化客户端（修正路由）
         self.clients = self._init_clients()
 
-        # 创建输出目录
+        # 创建输出目录（支持参数化日期）
         self.output_dir = Path(f"data/gen/{config.batch_date}")
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-    def _init_clients(self) -> Dict[str, GeminiClient]:
-        """初始化Gemini客户端"""
+    def _init_clients(self) -> Dict[str, Any]:
+        """初始化客户端（修正路由）"""
         clients = {}
 
-        # ALC客户端
+        # ALC客户端 - GEMINI_API_KEY (gemini-2.5-flash)
         alc_key = os.getenv("GEMINI_API_KEY")
         if alc_key:
             clients["ALC"] = GeminiClient(alc_key, key_index=0)
 
-        # AR客户端
+        # AR客户端 - GEMINI_API_KEY2 (gemini-2.5-pro)
         ar_key = os.getenv("GEMINI_API_KEY2")
         if ar_key:
             clients["AR"] = GeminiClient(ar_key, key_index=1)
 
-        # RSD/评审客户端
-        rsd_key = os.getenv("GEMINI_API_KEY3")
+        # RSD客户端 - DeepSeek_API_KEY2 (deepseek-reasoner)
+        rsd_key = os.getenv("DeepSeek_API_KEY2")
         if rsd_key:
-            clients["RSD"] = GeminiClient(rsd_key, key_index=2)
+            # 这里需要实现DeepSeek客户端，暂时用GeminiClient模拟
+            clients["RSD"] = GeminiClient(rsd_key, key_index=3)  # 3表示DeepSeek
+
+        # 评审客户端 - GEMINI_API_KEY3 (gemini-2.5-pro for judging)
+        judge_key = os.getenv("GEMINI_API_KEY3")
+        if judge_key:
+            clients["JUDGE"] = GeminiClient(judge_key, key_index=2)
 
         return clients
 
@@ -285,18 +298,31 @@ class DataGenerator:
         return domain_map.get(data_type, "general")
 
     def _record_provenance(self, data_type: str, prompt: str, key_index: int, sample_id: str):
-        """记录出处信息"""
-        prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
+        """记录出处信息（强化版）"""
+        generator_prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
+
+        # 根据key_index确定provider
+        if key_index == 3:  # DeepSeek
+            provider = "deepseek"
+            model = "deepseek-reasoner"
+        else:  # Gemini
+            provider = "google"
+            model = "gemini-2.5-flash" if key_index == 0 else "gemini-2.5-pro"
+
+        # 获取domain
+        domain = self._get_domain_for_type(data_type)
 
         record = ProvenanceRecord(
             uid=sample_id,
-            provider="google",
-            model="gemini-1.5-flash-latest",
+            provider=provider,
+            model=model,
+            key_index=key_index,
             temperature=self.config.temperature,
             seed=42,  # 固定种子
-            prompt_hash=prompt_hash,
+            generator_prompt_hash=generator_prompt_hash,
             timestamp=datetime.now().isoformat(),
-            key_index=key_index
+            domain=domain,
+            language="zh"
         )
 
         self.provenance_records.append(record)
