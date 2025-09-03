@@ -11,7 +11,13 @@ import numpy as np
 from datasets import Dataset
 
 from ..training.reward_system import RewardCalculator
-from ..simulation.gpt4_simulator import GPT4UserSimulator
+# Optional import for GPT-4 evaluation (Sidecar)
+try:
+    from integrations.simulation.gpt4_simulator import GPT4UserSimulator
+    GPT4_AVAILABLE = True
+except ImportError:
+    GPT4_AVAILABLE = False
+    GPT4UserSimulator = None
 from ..utils.config import get_config
 from ..utils.logging import get_logger
 
@@ -19,7 +25,7 @@ from ..utils.logging import get_logger
 class ModelEvaluator:
     """模型评估器"""
     
-    def __init__(self, model_trainer=None, gpt4_simulator: GPT4UserSimulator = None):
+    def __init__(self, model_trainer=None, gpt4_simulator = None):
         """
         初始化评估器
         
@@ -168,8 +174,8 @@ class ModelEvaluator:
         """
         self.logger.info("开始评估对话质量...")
         
-        if not self.gpt4_simulator:
-            self.logger.warning("未提供GPT-4模拟器，跳过对话质量评估")
+        if not self.gpt4_simulator or not GPT4_AVAILABLE:
+            self.logger.warning("GPT-4模拟器不可用，跳过对话质量评估")
             return {'conversation_quality': 0.0}
         
         if not self.model_trainer:
@@ -337,7 +343,7 @@ class ModelEvaluator:
             comprehensive_results['human_intervention'] = intervention_results
         
         # 3. 对话质量评估
-        if eval_datasets and self.gpt4_simulator:
+        if eval_datasets and self.gpt4_simulator and GPT4_AVAILABLE:
             quality_results = self.evaluate_conversation_quality(combined_dataset)
             comprehensive_results['conversation_quality'] = quality_results
         

@@ -10,7 +10,13 @@ import numpy as np
 from sklearn.metrics import f1_score
 from rouge_score import rouge_scorer
 
-from ..simulation.gpt4_simulator import GPT4UserSimulator
+# Optional import for GPT-4 evaluation (Sidecar)
+try:
+    from integrations.simulation.gpt4_simulator import GPT4UserSimulator
+    GPT4_AVAILABLE = True
+except ImportError:
+    GPT4_AVAILABLE = False
+    GPT4UserSimulator = None
 from ..utils.config import get_config
 from ..utils.logging import get_logger
 
@@ -18,7 +24,7 @@ from ..utils.logging import get_logger
 class RewardCalculator:
     """奖励计算器"""
     
-    def __init__(self, gpt4_simulator: GPT4UserSimulator = None):
+    def __init__(self, gpt4_simulator = None):
         """
         初始化奖励计算器
         
@@ -292,8 +298,8 @@ class RewardCalculator:
         Returns:
             GPT-4偏好分数 (0-1)
         """
-        if self.gpt4_simulator is None:
-            self.logger.warning("未提供GPT-4模拟器，跳过偏好评估")
+        if self.gpt4_simulator is None or not GPT4_AVAILABLE:
+            self.logger.warning("GPT-4模拟器不可用，跳过偏好评估")
             return 0.5
         
         try:
@@ -325,7 +331,7 @@ class RewardCalculator:
         safety = self.calculate_safety_penalty(prediction)
         
         # GPT-4偏好评估（可选）
-        if question and self.gpt4_simulator and self.config.get("reward.gpt4_evaluation.enabled", True):
+        if question and self.gpt4_simulator and GPT4_AVAILABLE and self.config.get("reward.gpt4_evaluation.enabled", True):
             gpt4_preference = self.calculate_gpt4_preference_reward(question, prediction)
         else:
             gpt4_preference = 0.5  # 默认中等分数

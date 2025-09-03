@@ -19,7 +19,13 @@ import numpy as np
 from datasets import Dataset
 
 from .reward_system import RewardCalculator
-from ..simulation.gpt4_simulator import GPT4UserSimulator
+# Optional import for GPT-4 evaluation (Sidecar)
+try:
+    from integrations.simulation.gpt4_simulator import GPT4UserSimulator
+    GPT4_AVAILABLE = True
+except ImportError:
+    GPT4_AVAILABLE = False
+    GPT4UserSimulator = None
 from ..utils.config import get_config
 from ..utils.logging import get_logger
 
@@ -185,11 +191,14 @@ class PPOModelTrainer:
         # 初始化GPT-4模拟器（如果配置了API密钥）
         try:
             api_key = self.global_config.get("simulation.openai_api_key")
-            if api_key:
+            if api_key and GPT4_AVAILABLE:
                 self.gpt4_simulator = GPT4UserSimulator(api_key)
                 self.logger.info("GPT-4模拟器初始化完成")
             else:
-                self.logger.warning("未配置OpenAI API密钥，将跳过GPT-4偏好评估")
+                if not GPT4_AVAILABLE:
+                    self.logger.warning("GPT-4模拟器模块不可用")
+                else:
+                    self.logger.warning("未配置OpenAI API密钥，将跳过GPT-4偏好评估")
         except Exception as e:
             self.logger.warning(f"GPT-4模拟器初始化失败: {e}")
         

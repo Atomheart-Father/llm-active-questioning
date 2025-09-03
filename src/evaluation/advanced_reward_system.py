@@ -699,7 +699,11 @@ class MultiDimensionalRewardSystem:
         """直接调用新Gemini适配器进行评分"""
         try:
             # 导入新的Gemini适配器
-            from src.scoring.providers.gemini import score as gemini_score
+            # Optional import for Gemini scoring (Sidecar)
+            try:
+                from integrations.scoring.providers.gemini import score as gemini_score
+            except ImportError:
+                raise ImportError("Gemini scoring provider not available. Please ensure integrations/scoring/providers/gemini.py exists.")
             
             # 构建评分提示
             prompt = self._build_scoring_prompt(dialogue)
