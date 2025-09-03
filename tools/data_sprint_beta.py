@@ -48,13 +48,24 @@ class DataSprintBeta:
         missing_keys = []
 
         for key in required_keys:
-            if not os.getenv(key):
+            value = os.getenv(key)
+            if not value:
                 missing_keys.append(key)
+            elif value.startswith("test_"):
+                logger.info(f"📝 检测到测试模式密钥: {key}")
 
         if missing_keys:
             logger.error(f"❌ 缺少必需的环境变量: {', '.join(missing_keys)}")
-            logger.error("请在.env文件中设置这些变量")
+            logger.error("请在.env文件中设置这些变量，或使用测试密钥")
             return False
+
+        # 检查是否处于测试模式
+        test_keys = [os.getenv(key) for key in required_keys if os.getenv(key, "").startswith("test_")]
+        if test_keys:
+            logger.info(f"🧪 检测到{len(test_keys)}个测试密钥，进入测试模式")
+            self.is_test_mode = True
+        else:
+            self.is_test_mode = False
 
         logger.info("✅ 环境配置检查通过")
         return True
