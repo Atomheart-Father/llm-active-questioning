@@ -47,22 +47,27 @@ clean:
 	@rm -rf reports/
 	@echo "✅ 清理完成"
 
-# Sprint-β 数据生成流水线
+# Sprint-β 数据生成流水线（支持参数化）
+DATA_DATE ?= $(shell date +%F)
+TARGET_ALC ?= 500
+TARGET_AR ?= 300
+TARGET_RSD ?= 200
+
 generate-data:
 	@echo "🚀 生成训练数据..."
 	@PYTHONPATH=$(shell pwd) python tools/data_generator.py
 
 dedup-data:
 	@echo "🔄 数据去重处理..."
-	@PYTHONPATH=$(shell pwd) python tools/deduplication.py data/gen/2025-09-03/
+	@PYTHONPATH=$(shell pwd) python tools/deduplication.py data/gen/$(DATA_DATE)/
 
 review-quality:
 	@echo "📊 质量评审..."
-	@PYTHONPATH=$(shell pwd) python tools/quality_reviewer.py data/gen/2025-09-03/
+	@PYTHONPATH=$(shell pwd) python tools/quality_reviewer.py data/gen/$(DATA_DATE)/
 
 sprint-beta:
 	@echo "🚀 执行Data Sprint-β完整流水线..."
-	@PYTHONPATH=$(shell pwd) python tools/data_sprint_beta.py
+	@PYTHONPATH=$(shell pwd) DATA_DATE=$(DATA_DATE) TARGET_ALC=$(TARGET_ALC) TARGET_AR=$(TARGET_AR) TARGET_RSD=$(TARGET_RSD) python tools/data_sprint_beta.py
 
 # 查看所有可用目标
 help:

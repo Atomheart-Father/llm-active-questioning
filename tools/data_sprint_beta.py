@@ -22,8 +22,12 @@ logger = logging.getLogger(__name__)
 class DataSprintBeta:
     """Data Sprint-β 主控制器"""
 
-    def __init__(self):
-        self.batch_date = "2025-09-03"
+    def __init__(self, data_date: str = None, target_alc: int = 500, target_ar: int = 300, target_rsd: int = 200):
+        self.batch_date = data_date or datetime.now().strftime("%Y-%m-%d")
+        self.target_alc = target_alc
+        self.target_ar = target_ar
+        self.target_rsd = target_rsd
+
         self.output_dir = Path(f"data/gen/{self.batch_date}")
         self.reports_dir = Path("reports")
 
@@ -35,7 +39,12 @@ class DataSprintBeta:
         """检查环境和配置"""
         logger.info("🔍 检查环境配置...")
 
-        required_keys = ["GEMINI_API_KEY", "GEMINI_API_KEY2", "GEMINI_API_KEY3"]
+        required_keys = [
+            "GEMINI_API_KEY",    # ALC生成
+            "GEMINI_API_KEY2",   # AR生成
+            "GEMINI_API_KEY3",   # 质量评审
+            "DeepSeek_API_KEY2"  # RSD生成
+        ]
         missing_keys = []
 
         for key in required_keys:
@@ -54,12 +63,12 @@ class DataSprintBeta:
         """生成数据"""
         logger.info("🚀 开始数据生成...")
 
-        # 配置生成参数
+        # 配置生成参数（使用环境变量配置）
         config = GenerationConfig(
             batch_date=self.batch_date,
-            alc_count=50,  # 5:3:2 配比
-            ar_count=30,
-            rsd_count=20
+            alc_count=self.target_alc,
+            ar_count=self.target_ar,
+            rsd_count=self.target_rsd
         )
 
         # 创建生成器并运行
@@ -314,14 +323,29 @@ def main():
         print("环境要求:")
         print("  GEMINI_API_KEY     - ALC数据生成")
         print("  GEMINI_API_KEY2    - AR数据生成")
-        print("  GEMINI_API_KEY3    - RSD生成和质量评审")
+        print("  DeepSeek_API_KEY2  - RSD数据生成")
+        print("  GEMINI_API_KEY3    - 质量评审")
+        print("")
+        print("可选环境变量:")
+        print("  DATA_DATE          - 生成日期 (默认当天)")
+        print("  TARGET_ALC         - ALC目标数量 (默认500)")
+        print("  TARGET_AR          - AR目标数量 (默认300)")
+        print("  TARGET_RSD         - RSD目标数量 (默认200)")
         print("")
         print("输出:")
-        print("  data/gen/2025-09-03/     - 生成的数据文件")
+        print("  data/gen/{DATA_DATE}/     - 生成的数据文件")
         print("  reports/                 - 各种报告和统计")
         return
 
-    sprint = DataSprintBeta()
+    # 从环境变量读取配置
+    data_date = os.getenv("DATA_DATE", datetime.now().strftime("%Y-%m-%d"))
+    target_alc = int(os.getenv("TARGET_ALC", "500"))
+    target_ar = int(os.getenv("TARGET_AR", "300"))
+    target_rsd = int(os.getenv("TARGET_RSD", "200"))
+
+    logger.info(f"配置: DATA_DATE={data_date}, TARGET_ALC={target_alc}, TARGET_AR={target_ar}, TARGET_RSD={target_rsd}")
+
+    sprint = DataSprintBeta(data_date, target_alc, target_ar, target_rsd)
     success = sprint.run_full_pipeline()
 
     if not success:
