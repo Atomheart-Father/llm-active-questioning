@@ -181,6 +181,10 @@ tmp/
 *.swp
 *~
 
+# Gemini cache and artifacts
+gemini_cache.sqlite
+gemini_*.sqlite
+
 # Hugging Face cache
 .cache/huggingface/
 # Documentation files

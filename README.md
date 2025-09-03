@@ -93,9 +93,11 @@ python multi_turn_system.py
 python dataset_expansion.py
 ```
 
-#### 4. 测试Gemini API集成
+#### 4. 测试Gemini API集成 (可选工具)
 ```bash
-python gemini_integration.py
+# 注意：Gemini集成已移至integrations/gemini/目录
+# 仅用于独立测试，不参与训练/评测主回路
+python integrations/gemini/gemini_integration.py
 ```
 
 ### 配置说明
@@ -150,9 +152,14 @@ expander = DatasetExpander()
 training_data = expander.build_comprehensive_training_dataset()
 ```
 
-### API集成 (`gemini_integration.py`)
+### API集成 (可选工具 - `integrations/gemini/gemini_integration.py`)
 ```python
-# 生成澄清对话
+# 注意：Gemini集成已隔离，不参与训练/评测主回路
+# 仅用于独立测试和Shadow评测
+
+from integrations.gemini.gemini_integration import GeminiDataGenerator
+
+# 生成澄清对话 (仅用于独立测试)
 generator = GeminiDataGenerator()
 dialogue = generator.generate_clarifying_dialogue("模糊问题")
 ```
