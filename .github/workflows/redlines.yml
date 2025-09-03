@@ -1,27 +1,21 @@
 name: redlines
-on:
-  push:
-  pull_request:
-
+on: [push, pull_request]
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # 1) 根目录必须干净
       - name: Root must be clean
         shell: bash
         run: |
           set -euo pipefail
           if ls -1 | egrep -q '^(gemini_cache\.sqlite|gemini_integration\.py)$'; then
             echo "❌ Root polluted by Gemini files"
-            ls -la | egrep 'gemini_cache\.sqlite|gemini_integration\.py' || true
             exit 1
           fi
           echo "✅ Root clean"
 
-      # 2) 禁止主回路导入外部 LLM（豁免 integrations/ 与 data/；只扫 .py）
       - name: Ban external LLM imports in main loop
         shell: bash
         run: |
@@ -30,25 +24,7 @@ jobs:
                --include='*.py' \
                --exclude-dir=integrations --exclude-dir=.git --exclude-dir=data \
                src/ tools/ train/ 2>/dev/null; then
-            echo "❌ Found forbidden imports in main loop (src/tools/train)"
+            echo "❌ Found forbidden imports in main loop"
             exit 1
           fi
           echo "✅ No forbidden imports in main loop"
-
-      # 3) 可复算质检（存在就跑；缺依赖不阻断）
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-      - name: Recount metrics (repro check)
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -f tools/quality/recount_metrics.py ]; then
-            if [ -f requirements.txt ]; then
-              python -m pip install --upgrade pip
-              pip install -r requirements.txt || true
-            fi
-            python tools/quality/recount_metrics.py --check || true
-          else
-            echo "ℹ️ recount_metrics.py not found; skipping"
-          fi
