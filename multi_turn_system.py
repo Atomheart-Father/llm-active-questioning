@@ -19,7 +19,7 @@ sys.path.insert(0, str(project_root))
 
 from src.utils.config import get_config
 from src.utils.logging import get_logger
-from gemini_integration import GeminiDataGenerator
+# REMOVED: from gemini_integration import GeminiDataGenerator
 
 
 class InteractionMode(Enum):

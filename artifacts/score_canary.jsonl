@@ -1,0 +1,2 @@
+{"timestamp": 1756739416.471421, "test_type": "positive_case", "provider": "gemini", "status": "failed", "error": "429 You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. [violations {\n  quota_m", "latency_ms": 0, "key_hid": "unknown"}
+{"timestamp": 1756739420.297062, "test_type": "positive_case", "provider": "gemini", "status": "success", "latency_ms": 3825, "score": 1.0, "billable_tokens": 912, "key_hid": "19782c4f"}
