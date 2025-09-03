@@ -74,13 +74,15 @@ jobs:
             exit 1
           fi
 
-          # 检查是否还有根目录残留
-          if [ -f "gemini_integration.py" ] || [ -f "gemini_cache.sqlite" ]; then
-            echo "❌ 发现根目录残留文件"
-            ls -la | grep gemini || true
+      - name: Root directory must be clean
+        run: |
+          echo "🔍 检查根目录是否干净..."
+          if ls -1 | egrep -q "^(gemini_cache\.sqlite|gemini_integration\.py)$"; then
+            echo "❌ 根目录被Gemini文件污染"
+            ls -la | egrep "gemini_cache\.sqlite|gemini_integration\.py" || true
             exit 1
           else
-            echo "✅ 根目录无Gemini残留"
+            echo "✅ 根目录干净，无Gemini残留"
           fi
 
       - name: Validate quality artifacts
