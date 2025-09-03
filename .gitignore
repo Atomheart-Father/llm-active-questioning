@@ -189,3 +189,7 @@ gemini_*.sqlite
 .cache/huggingface/
 # Documentation files
 *.pdf
+
+# Gemini cache
+gemini_*.sqlite
+
