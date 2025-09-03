@@ -90,9 +90,11 @@ class DataSprintBeta:
 
         try:
             result = deduplicator.process_directory(str(self.output_dir))
-            logger.info("✅ 数据去重完成"            logger.info(f"   原始样本: {result['stats']['total_samples']}")
+            logger.info("✅ 数据去重完成")
+            logger.info(f"   原始样本: {result['stats']['total_samples']}")
             logger.info(f"   唯一样本: {result['stats']['unique_samples']}")
-            logger.info(".2f"            return True
+            logger.info(".2f")
+            return True
         except Exception as e:
             logger.error(f"❌ 数据去重失败: {e}")
             return False
@@ -110,9 +112,11 @@ class DataSprintBeta:
 
         try:
             result = pipeline.process_directory(str(self.output_dir))
-            logger.info("✅ 质量评审完成"            logger.info(f"   评审样本: {result['stats']['total_reviewed']}")
+            logger.info("✅ 质量评审完成")
+            logger.info(f"   评审样本: {result['stats']['total_reviewed']}")
             logger.info(f"   合格样本: {result['stats']['total_passed']}")
-            logger.info(".2f"            return True
+            logger.info(".2f")
+            return True
         except Exception as e:
             logger.error(f"❌ 质量评审失败: {e}")
             return False

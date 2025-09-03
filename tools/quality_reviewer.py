@@ -323,8 +323,8 @@ def main():
     with open(report_file, 'w', encoding='utf-8') as f:
         f.write(result["report"])
 
-    print("
-质量评审完成！"    print(f"评审样本: {result['stats']['total_reviewed']}")
+    print("\n质量评审完成！")
+    print(f"评审样本: {result['stats']['total_reviewed']}")
     print(f"合格样本: {result['stats']['total_passed']}")
     print(f"合格率: {result['stats']['pass_rate']:.2f}%")
     print(f"平均得分: {result['stats']['avg_overall_score']:.3f}")

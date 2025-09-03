@@ -148,6 +148,8 @@ class DataDeduplicator:
             "creative": 0.90   # 默认值
         }
 
+        self.similarity_threshold = 0.92  # 默认值，会被分域阈值覆盖
+        self.hash_size = 64  # SimHash大小
         self.stats = {
             "total_samples": 0,
             "unique_samples": 0,
@@ -292,7 +294,7 @@ class DataDeduplicator:
 
 ## 相似度设置
 - **相似度阈值**: {self.similarity_threshold}
-- **哈希大小**: {self.deduplicator.hash_size}位
+            - **哈希大小**: {self.hash_size}位
 
 ## 重复详情
 """
@@ -331,7 +333,7 @@ def main():
 
     similarity_threshold = float(os.getenv("DEDUPLICATION_THRESHOLD", "0.92"))
 
-    deduplicator = DataDeduplicator(similarity_threshold)
+    deduplicator = DataDeduplicator()
     result = deduplicator.process_directory(input_dir, output_dir)
 
     # 保存报告
@@ -341,8 +343,8 @@ def main():
     with open(report_file, 'w', encoding='utf-8') as f:
         f.write(result["report"])
 
-    print("
-去重完成！"    print(f"总样本: {result['stats']['total_samples']}")
+    print("\n去重完成！")
+    print(f"总样本: {result['stats']['total_samples']}")
     print(f"唯一样本: {result['stats']['unique_samples']}")
     print(f"移除样本: {result['stats']['removed_samples']}")
     print(f"重复率: {(result['stats']['removed_samples'] / result['stats']['total_samples'] * 100):.2f}%" if result['stats']['total_samples'] > 0 else "0.00%")

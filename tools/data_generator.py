@@ -40,10 +40,10 @@ class ProvenanceRecord:
     temperature: float
     seed: int
     generator_prompt_hash: str
-    judge_prompt_hash: Optional[str] = None
     timestamp: str
     domain: str  # "planning", "qa", "reasoning", "creative"
     language: str = "zh"  # 默认中文
+    judge_prompt_hash: Optional[str] = None
     dedup_score: Optional[float] = None
     quality_score: Optional[float] = None
     judge_votes: Optional[Dict[str, float]] = None  # 双评审结果
