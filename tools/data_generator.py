@@ -30,10 +30,9 @@ ALC_SCHEMA = {
                 "type": "object",
                 "properties": {
                     "role": {"type": "string", "enum": ["user", "model_target", "assistant"]},
-                    "text": {"type": "string", "minLength": 1, "maxLength": 250}
+                    "text": {"type": "string", "minLength": 1}
                 },
-                "required": ["role", "text"],
-                "additionalProperties": False
+                "required": ["role", "text"]
             }
         },
         "labels": {
@@ -41,27 +40,24 @@ ALC_SCHEMA = {
             "properties": {
                 "ask_required": {"type": "boolean"},
                 "ambiguity_types": {"type": "array", "items": {"type": "string"}},
-                "good_question_set": {"type": "array", "maxItems": 3, "items": {"type": "string", "maxLength": 120}},
+                "good_question_set": {"type": "array", "items": {"type": "string"}},
                 "minimal_clarifications": {"type": "integer", "enum": [1, 2]}
             },
-            "required": ["ask_required", "ambiguity_types", "good_question_set", "minimal_clarifications"],
-            "additionalProperties": False
+            "required": ["ask_required", "ambiguity_types", "good_question_set", "minimal_clarifications"]
         },
         "reasoning": {
             "type": "object",
             "properties": {
                 "actions": {
                     "type": "array",
-                    "items": {"type": "string", "enum": ["AWARE_GAP", "ASK", "STOP_ASK", "FINALIZE"]}
+                    "items": {"type": "string"}
                 }
             },
-            "required": ["actions"],
-            "additionalProperties": False
+            "required": ["actions"]
         },
-        "source": {"type": "string", "enum": ["synthetic-gemini", "r1-distill", "curated", "human"]}
+        "source": {"type": "string"}
     },
-    "required": ["turns", "labels", "reasoning", "source"],
-    "additionalProperties": False
+    "required": ["turns", "labels", "reasoning", "source"]
 }
 
 AR_SCHEMA = {
@@ -74,10 +70,9 @@ AR_SCHEMA = {
                 "type": "object",
                 "properties": {
                     "role": {"type": "string", "enum": ["user", "model_target", "assistant"]},
-                    "text": {"type": "string", "minLength": 1, "maxLength": 250}
+                    "text": {"type": "string", "minLength": 1}
                 },
-                "required": ["role", "text"],
-                "additionalProperties": False
+                "required": ["role", "text"]
             }
         },
         "labels": {
@@ -85,28 +80,25 @@ AR_SCHEMA = {
             "properties": {
                 "ask_required": {"type": "boolean"},
                 "ambiguity_types": {"type": "array", "items": {"type": "string"}},
-                "good_question_set": {"type": "array", "maxItems": 3, "items": {"type": "string", "maxLength": 120}},
+                "good_question_set": {"type": "array", "items": {"type": "string"}},
                 "minimal_clarifications": {"type": "integer", "enum": [1, 2]},
-                "oracle_answer": {"type": "string", "maxLength": 800}
+                "oracle_answer": {"type": "string"}
             },
-            "required": ["ask_required", "ambiguity_types", "good_question_set", "minimal_clarifications", "oracle_answer"],
-            "additionalProperties": False
+            "required": ["ask_required", "ambiguity_types", "good_question_set", "minimal_clarifications", "oracle_answer"]
         },
         "reasoning": {
             "type": "object",
             "properties": {
                 "actions": {
                     "type": "array",
-                    "items": {"type": "string", "enum": ["AWARE_GAP", "ASK", "STOP_ASK", "FINALIZE"]}
+                    "items": {"type": "string"}
                 }
             },
-            "required": ["actions"],
-            "additionalProperties": False
+            "required": ["actions"]
         },
-        "source": {"type": "string", "enum": ["synthetic-gemini", "r1-distill", "curated", "human"]}
+        "source": {"type": "string"}
     },
-    "required": ["turns", "labels", "reasoning", "source"],
-    "additionalProperties": False
+    "required": ["turns", "labels", "reasoning", "source"]
 }
 
 RSD_SCHEMA = {
@@ -119,10 +111,9 @@ RSD_SCHEMA = {
                 "type": "object",
                 "properties": {
                     "role": {"type": "string", "enum": ["user", "model_target", "assistant"]},
-                    "text": {"type": "string", "minLength": 1, "maxLength": 200}
+                    "text": {"type": "string", "minLength": 1}
                 },
-                "required": ["role", "text"],
-                "additionalProperties": False
+                "required": ["role", "text"]
             }
         },
         "labels": {
@@ -130,34 +121,31 @@ RSD_SCHEMA = {
             "properties": {
                 "ask_required": {"type": "boolean"},
                 "ambiguity_types": {"type": "array", "items": {"type": "string"}},
-                "good_question_set": {"type": "array", "maxItems": 3, "items": {"type": "string", "maxLength": 120}},
+                "good_question_set": {"type": "array", "items": {"type": "string"}},
                 "minimal_clarifications": {"type": "integer", "enum": [1, 2]}
             },
-            "required": ["ask_required", "ambiguity_types", "good_question_set", "minimal_clarifications"],
-            "additionalProperties": False
+            "required": ["ask_required", "ambiguity_types", "good_question_set", "minimal_clarifications"]
         },
         "reasoning": {
             "type": "object",
             "properties": {
                 "actions": {
                     "type": "array",
-                    "items": {"type": "string", "enum": ["AWARE_GAP", "ASK", "STOP_ASK", "FINALIZE"]}
+                    "items": {"type": "string"}
                 }
             },
-            "required": ["actions"],
-            "additionalProperties": False
+            "required": ["actions"]
         },
-        "source": {"type": "string", "enum": ["synthetic-gemini", "r1-distill", "curated", "human"]}
+        "source": {"type": "string"}
     },
-    "required": ["turns", "labels", "reasoning", "source"],
-    "additionalProperties": False
+    "required": ["turns", "labels", "reasoning", "source"]
 }
 
-# 输出长度配置（任务自适应）
+# 输出长度配置（任务自适应 - 降低限制以减少MAX_TOKENS）
 OUTPUT_TOKEN_LIMITS = {
-    "ALC": int(os.getenv("ALC_MAX_OUTPUT_TOKENS", 768)),
-    "AR": int(os.getenv("AR_MAX_OUTPUT_TOKENS", 1536)),
-    "RSD": int(os.getenv("RSD_MAX_OUTPUT_TOKENS", 1024))
+    "ALC": int(os.getenv("ALC_MAX_OUTPUT_TOKENS", 512)),  # 从768降低到512
+    "AR": int(os.getenv("AR_MAX_OUTPUT_TOKENS", 1024)),   # 从1536降低到1024
+    "RSD": int(os.getenv("RSD_MAX_OUTPUT_TOKENS", 768))   # 从1024降低到768
 }
 
 AR_TOKEN_CAP = int(os.getenv("AR_MAX_OUTPUT_TOKENS_CAP", 3072))
@@ -281,17 +269,38 @@ class GeminiClient:
                     "responseSchema": schema_map[task_type.upper()]
                 })
 
-                # 在prompt中添加JSON-only约束
+                # 在prompt中添加严格的JSON-only约束
                 json_constraint = """
-Constraints:
-- Output must be valid JSON only, no markdown/polite text.
-- Keep each `turns[].text` ≤ 200–250 chars; `good_question_set[]` ≤ 120 chars.
-- For AR: `oracle_answer` ≤ 800 chars (if insufficient, you may compress).
-- If you risk exceeding the limit, drop non-required details first. Never exceed.
+=== CRITICAL JSON OUTPUT REQUIREMENTS ===
 
-You MUST output a single JSON object that validates against the provided JSON Schema.
-Do not write any explanations, prefaces, code fences, or markdown.
-If unsure, return the smallest valid object that passes the schema.
+You MUST output ONLY a valid JSON object. No explanations, no markdown, no code blocks.
+
+REQUIRED JSON STRUCTURE:
+{
+  "turns": [
+    {"role": "user", "text": "user message"},
+    {"role": "model_target", "text": "<ASK>question</ASK>"}
+  ],
+  "labels": {
+    "ask_required": true,
+    "ambiguity_types": ["type1", "type2"],
+    "good_question_set": ["question1", "question2"],
+    "minimal_clarifications": 1
+  },
+  "reasoning": {
+    "actions": ["AWARE_GAP", "ASK", "STOP_ASK", "FINALIZE"]
+  },
+  "source": "synthetic-gemini"
+}
+
+RULES:
+1. Output MUST be pure JSON - no ```json wrapper
+2. No polite phrases like "谢谢" or "please"
+3. model_target must contain exactly one <ASK> or <FINAL> tag
+4. Keep text concise but complete
+5. Include ALL required fields
+
+If you cannot generate valid JSON, return the simplest possible valid object.
 """
                 payload["contents"][0]["parts"][0]["text"] = prompt + json_constraint
 
