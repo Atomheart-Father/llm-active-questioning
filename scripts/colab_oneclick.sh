@@ -84,20 +84,40 @@ pip install -r requirements.txt
 # Step 5: Verify environment
 echo "🔍 Verifying environment setup..."
 python3 -c "
-import sys
+import sys, os
 sys.path.append('.')
+
+# Load environment variables from .env if they exist
+try:
+    if os.path.exists('.env'):
+        from dotenv import load_dotenv
+        load_dotenv()
+        print('✓ Loaded environment from .env file')
+except ImportError:
+    print('⚠️ python-dotenv not available, skipping .env loading')
+    # Manual loading of .env if dotenv not available
+    if os.path.exists('.env'):
+        with open('.env', 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    os.environ[key.strip()] = value.strip().strip('"\''')
+
 try:
     from streaming_client import LLMClient
     print('✓ streaming_client.py - OK')
 except ImportError as e:
-    print(f'✗ streaming_client.py - Error: {e}')
+    print(f'✗ streaming_client.py - Import failed: {e}')
+    print('  Make sure all dependencies are installed')
     sys.exit(1)
 
 try:
     from schema_validator import validate_schema, minimal_completion, extract_largest_json
     print('✓ schema_validator.py - OK')
 except ImportError as e:
-    print(f'✗ schema_validator.py - Error: {e}')
+    print(f'✗ schema_validator.py - Import failed: {e}')
+    print('  Make sure schema_validator.py exists and is valid')
     sys.exit(1)
 
 try:
@@ -106,6 +126,7 @@ try:
     missing = [k for k in env_keys if not os.getenv(k)]
     if missing:
         print(f'✗ Missing environment variables: {missing}')
+        print('  Please set these in your .env file')
         sys.exit(1)
     print('✓ Environment variables - OK')
 except Exception as e:
