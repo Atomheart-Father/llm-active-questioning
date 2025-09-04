@@ -43,6 +43,7 @@ class ProvenanceRecord:
     timestamp: str
     domain: str  # "planning", "qa", "reasoning", "creative"
     language: str = "zh"  # 默认中文
+    recipe: Optional[str] = None  # 生成配方 (A/B/C)
     judge_prompt_hash: Optional[str] = None
     dedup_score: Optional[float] = None
     quality_score: Optional[float] = None
@@ -50,7 +51,7 @@ class ProvenanceRecord:
     escalated_to_ds: bool = False  # 是否仲裁到DeepSeek
     reject_reason: Optional[str] = None
     risk_flags: Optional[List[str]] = None  # 安全风险标记
-    failover: Optional[Dict[str, Any]] = None  # Fail-Over记录 {"from": "gemini-flash", "to": "deepseek-chat", "reason_code": 429, "ts": "2025-09-03T12:00:00"}
+    failover: Optional[Dict[str, Any]] = None  # Fail-Over记录
 
 class GeminiClient:
     """Gemini API客户端（支持Fail-Over）"""
@@ -278,39 +279,39 @@ class DataGenerator:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def _init_clients(self) -> Dict[str, Any]:
-        """初始化客户端（Fail-Over路由）"""
+        """初始化客户端（智能Fail-Over路由）"""
         clients = {}
 
         # 检查Fail-Over配置
         failover_enabled = os.getenv("FAILOVER_ENABLE", "true").lower() == "true"
         allow_rsd_fallback = os.getenv("ALLOW_RSD_FALLBACK", "false").lower() == "true"
 
-        # ALC客户端 - GEMINI_API_KEY (gemini-2.5-flash → gemini-2.5-flash-lite → deepseek-chat)
+        # ALC客户端 - gemini-2.5-flash → gemini-2.5-flash-lite → deepseek-chat
         alc_key = os.getenv("GEMINI_API_KEY")
         if alc_key:
             fallback_clients = []
             if failover_enabled:
-                # 备用: gemini-2.5-flash-lite
+                # 备用: gemini-2.5-flash-lite (key2)
                 if os.getenv("GEMINI_API_KEY2"):
                     fallback_clients.append(GeminiClient(os.getenv("GEMINI_API_KEY2"), key_index=0))
 
                 # 最后备用: deepseek-chat
-                if os.getenv("DEEPSEEK_API_KEY"):
-                    fallback_clients.append(DeepSeekClient(os.getenv("DEEPSEEK_API_KEY"), "deepseek-chat"))
+                if os.getenv("DeepSeek_API_KEY"):
+                    fallback_clients.append(DeepSeekClient(os.getenv("DeepSeek_API_KEY"), "deepseek-chat"))
 
             clients["ALC"] = GeminiClient(alc_key, key_index=0, fallback_clients=fallback_clients)
 
-        # AR客户端 - GEMINI_API_KEY2 (gemini-2.5-pro → deepseek-reasoner)
+        # AR客户端 - gemini-2.5-pro → deepseek-reasoner
         ar_key = os.getenv("GEMINI_API_KEY2")
         if ar_key:
             fallback_clients = []
-            if failover_enabled and os.getenv("DEEPSEEK_API_KEY2"):
-                fallback_clients.append(DeepSeekClient(os.getenv("DEEPSEEK_API_KEY2"), "deepseek-reasoner"))
+            if failover_enabled and os.getenv("DeepSeek_API_KEY2"):
+                fallback_clients.append(DeepSeekClient(os.getenv("DeepSeek_API_KEY2"), "deepseek-reasoner"))
 
             clients["AR"] = GeminiClient(ar_key, key_index=1, fallback_clients=fallback_clients)
 
-        # RSD客户端 - DeepSeek_API_KEY2 (deepseek-reasoner，默认无下探)
-        rsd_key = os.getenv("DEEPSEEK_API_KEY2")
+        # RSD客户端 - deepseek-reasoner (默认无下探，仅当ALLOW_RSD_FALLBACK=true时允许→gemini-2.5-pro)
+        rsd_key = os.getenv("DeepSeek_API_KEY2")
         if rsd_key:
             fallback_clients = []
             if allow_rsd_fallback and os.getenv("GEMINI_API_KEY"):
@@ -322,9 +323,9 @@ class DataGenerator:
             if fallback_clients:
                 clients["RSD"] = GeminiClient("", key_index=3, fallback_clients=[clients["RSD"]] + fallback_clients)
 
-        # 评审客户端 - 双路评审（Gemini + DeepSeek）
+        # 评审客户端 - gemini-pro + 本地Qwen并行，仅冲突样本升到deepseek-chat仲裁
         judge_key = os.getenv("GEMINI_API_KEY3")
-        ds_key = os.getenv("DEEPSEEK_API_KEY")
+        ds_key = os.getenv("DeepSeek_API_KEY")
         if judge_key:
             clients["JUDGE"] = GeminiClient(judge_key, key_index=2)
             if ds_key:
@@ -332,22 +333,22 @@ class DataGenerator:
 
         return clients
 
-    def generate_alc_data(self) -> List[Dict[str, Any]]:
-        """生成ALC数据"""
-        logger.info(f"开始生成ALC数据，目标数量: {self.config.alc_count}")
+    def generate_alc_data(self, recipe: str = "A") -> List[Dict[str, Any]]:
+        """生成ALC数据（支持多配方）"""
+        logger.info(f"开始生成ALC数据，目标数量: {self.config.alc_count}，配方: {recipe}")
 
-        alc_prompt = self._get_alc_prompt()
+        alc_prompt = self._get_alc_prompt(recipe)
         samples = []
 
         for i in range(self.config.alc_count):
-            sample = self._generate_single_sample("ALC", alc_prompt, i)
+            sample = self._generate_single_sample("ALC", alc_prompt, i, recipe)
             if sample:
                 samples.append(sample)
 
             # 控制速率
             time.sleep(self.config.rate_limit_delay)
 
-        logger.info(f"ALC数据生成完成，实际生成: {len(samples)}")
+        logger.info(f"ALC数据生成完成，实际生成: {len(samples)}，配方: {recipe}")
         return samples
 
     def generate_ar_data(self) -> List[Dict[str, Any]]:
@@ -384,7 +385,7 @@ class DataGenerator:
         logger.info(f"RSD数据生成完成，实际生成: {len(samples)}")
         return samples
 
-    def _generate_single_sample(self, data_type: str, prompt: str, index: int) -> Optional[Dict[str, Any]]:
+    def _generate_single_sample(self, data_type: str, prompt: str, index: int, recipe: str = None) -> Optional[Dict[str, Any]]:
         """生成单个样本（带质量控制和Fail-Over）"""
         client = self.clients.get(data_type)
         if not client:
@@ -422,8 +423,8 @@ class DataGenerator:
                 logger.warning(f"{data_type}样本{index}质量不合格: {quality_check['reasons']}")
                 return None
 
-            # 记录provenance（包含Fail-Over信息）
-            self._record_provenance(data_type, prompt, client.key_index, sample.get("id", f"{data_type}-{index}"), failover_info)
+            # 记录provenance（包含Fail-Over信息和recipe）
+            self._record_provenance(data_type, prompt, client.key_index, sample.get("id", f"{data_type}-{index}"), failover_info, recipe)
 
             return sample
 
@@ -513,7 +514,7 @@ class DataGenerator:
                     # 清理多余的标点和空格
                     ask_content = re.sub(r'[，,。.]', '？', ask_content)
                     ask_content = re.sub(r'\s+', ' ', ask_content)
-                    ask_content = ask_content.strip('？，,。.\s')
+                    ask_content = ask_content.strip('？，,。 \t\n')
 
                     # 如果清理后内容为空，保持原样
                     if not ask_content:
@@ -726,10 +727,18 @@ class DataGenerator:
             return "synthetic-gemini"
 
     def _extract_json_from_text(self, text: str, data_type: str) -> Dict[str, Any]:
-        """从文本中提取JSON"""
+        """从文本中提取JSON（增强版）"""
         import re
 
-        # 尝试找到JSON块
+        # 首先尝试提取JSON代码块
+        json_match = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
+        if json_match:
+            try:
+                return json.loads(json_match.group(1))
+            except json.JSONDecodeError:
+                pass
+
+        # 尝试找到JSON对象（不带代码块标记）
         json_match = re.search(r'\{.*\}', text, re.DOTALL)
         if json_match:
             try:
@@ -737,7 +746,19 @@ class DataGenerator:
             except json.JSONDecodeError:
                 pass
 
-        # 如果找不到JSON，返回默认数据
+        # 如果还是找不到JSON，尝试清理文本
+        cleaned_text = text.strip()
+        # 移除可能的markdown标记
+        cleaned_text = re.sub(r'^```\w*\n?', '', cleaned_text)
+        cleaned_text = re.sub(r'\n?```$', '', cleaned_text)
+
+        try:
+            return json.loads(cleaned_text)
+        except json.JSONDecodeError:
+            pass
+
+        # 如果都失败了，返回默认数据
+        logger.warning(f"无法从响应中提取JSON，返回默认{data_type}数据")
         return self._get_default_data_for_type(data_type)
 
     def _create_default_sample(self, data_type: str, index: int) -> Dict[str, Any]:
@@ -746,12 +767,12 @@ class DataGenerator:
         return self._format_sample(data_type, data, index)
 
     def _get_default_data_for_type(self, data_type: str) -> Dict[str, Any]:
-        """获取数据类型的默认数据"""
+        """获取数据类型的默认数据（确保turns不为空）"""
         if data_type == "ALC":
             return {
                 "turns": [
                     {"role": "user", "text": "请帮我规划一个活动"},
-                    {"role": "model_target", "text": "<ASK> 您想做什么类型的活动？预算多少？ </ASK>"}
+                    {"role": "model_target", "text": "<ASK>您想做什么类型的活动？预算多少？</ASK>"}
                 ],
                 "labels": {
                     "ambiguity_types": ["preference", "budget"],
@@ -765,7 +786,8 @@ class DataGenerator:
                     "actions": [
                         {"t": "AWARE_GAP", "vars": ["preference", "budget"]},
                         {"t": "ASK", "q": "请告诉我您想做什么类型的活动，预算大约多少"},
-                        {"t": "STOP_ASK"}
+                        {"t": "STOP_ASK"},
+                        {"t": "FINALIZE"}
                     ]
                 }
             }
@@ -825,8 +847,8 @@ class DataGenerator:
         }
         return domain_map.get(data_type, "general")
 
-    def _record_provenance(self, data_type: str, prompt: str, key_index: int, sample_id: str, failover_info: Optional[Dict[str, Any]] = None):
-        """记录出处信息（强化版，包含Fail-Over）"""
+    def _record_provenance(self, data_type: str, prompt: str, key_index: int, sample_id: str, failover_info: Optional[Dict[str, Any]] = None, recipe: Optional[str] = None):
+        """记录出处信息（强化版，包含Fail-Over和Recipe）"""
         generator_prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
 
         # 根据key_index确定provider
@@ -851,12 +873,13 @@ class DataGenerator:
             timestamp=datetime.now().isoformat(),
             domain=domain,
             language="zh",
-            failover=failover_info  # 包含Fail-Over信息
+            recipe=recipe,  # 生成配方
+            failover=failover_info  # Fail-Over信息
         )
 
         self.provenance_records.append(record)
 
-    def _get_alc_prompt(self) -> str:
+    def _get_alc_prompt(self, recipe: str = "A") -> str:
         """获取ALC生成提示（多样性增强版）"""
         # 人设池（随机选择）
         personas = [
