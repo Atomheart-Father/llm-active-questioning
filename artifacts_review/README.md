@@ -65,6 +65,36 @@ artifacts_review/
 - No sensitive information (API keys, secrets) is included
 - Files contain only review-relevant data and metrics
 
+### ⚠️ 重要提醒：产物提交规则
+
+**只提交此目录 (artifacts_review/) 的内容用于评审！**
+
+#### ❌ 绝对禁止提交的目录（已在.gitignore中严格排除）
+```bash
+reports/           # 生成的报告目录 - 严禁提交
+data/gen/          # 生成的数据文件 - 严禁提交
+runs/              # 运行时中间文件和缓存 - 严禁提交
+```
+
+#### ✅ 只允许提交的文件（安全可提交）
+```bash
+artifacts_review/  # 此目录的所有内容都可以安全提交
+├── *.md           # 所有markdown审阅报告
+└── samples/*.json # 抽检样本文件 (5个用于人工评审)
+```
+
+#### 📋 评审流程（严格执行）
+1. **生成**: 在notebook中生成数据到 `data/gen/` 和 `runs/` （本地运行，不提交）
+2. **分析**: 运行质量分析，生成报告到 `artifacts_review/` （安全可提交）
+3. **提交**: **只提交** `artifacts_review/**` 用于PR评审
+4. **清理**: 本地保留或清理 `reports/`、`data/gen/`、`runs/` （这些不会被提交）
+
+#### 🚨 安全警告
+- **违反提交规则将导致PR被拒绝**
+- **绝对不要** 提交 `reports/`、`data/gen/`、`runs/` 目录
+- **只允许** 提交 `artifacts_review/` 目录的内容
+- 所有生成物已在 `.gitignore` 中配置排除，请勿修改此配置
+
 ### 🔒 Privacy & Security
 - API keys are never stored or displayed in these files
 - Sample data is anonymized and contains no personal information

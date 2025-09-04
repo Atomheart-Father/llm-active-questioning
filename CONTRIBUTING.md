@@ -42,6 +42,54 @@ python -m pytest tests/
 4. **提交代码**: 使用清晰的commit信息
 5. **创建PR**: 提交Pull Request
 
+### ⚠️ 重要：数据生成工作流规则
+
+#### 命令行使用限制
+**只允许在CLI运行短校验任务（≤1分钟）：**
+```bash
+# ✅ 允许：基础环境和数据校验
+make env-check && make sanity && make data-check
+```
+
+**严格禁止在CLI运行以下长耗时任务：**
+```bash
+# ❌ 禁止：任何批量生成任务
+python tools/data_generator.py
+make sprint-beta TARGET_ALC=100 TARGET_AR=50 TARGET_RSD=50
+# ❌ 禁止：训练和评审任务
+python train/ppo_runner.py
+python tools/evaluate.py
+# ❌ 禁止：任何 ≥10 条的生成/评审/评测任务
+```
+
+#### Notebook执行规范
+**所有长任务统一在Jupyter Notebook中执行：**
+```bash
+# ✅ 正确方式：启动Notebook环境
+jupyter notebook
+
+# 按顺序执行：
+# 1. notebooks/00_env_and_router_check.ipynb - 环境检查
+# 2. notebooks/10_sprint_beta_microbatch.ipynb - 数据生成
+# 3. notebooks/20_quality_reports_and_review.ipynb - 质量分析
+```
+
+#### 产物提交规则
+- ✅ **允许提交**: `artifacts_review/**` 目录的全部内容
+  - 审阅报告（*.md文件）
+  - 抽检样本（samples/*.json，5条）
+- ❌ **绝对禁止提交**: 以下目录（已在.gitignore中排除）
+  - `reports/` - 生成的报告目录
+  - `data/gen/` - 生成的数据文件
+  - `runs/` - 运行时的中间文件和缓存
+- ✅ **人工评审**: 提交5条代表性样本用于质量验证
+
+#### 安全与合规要求
+- 🔒 **隐私保护**: Notebook执行过程中不会泄露API密钥
+- 🔄 **可重现性**: 所有参数在Notebook顶部配置，支持中断恢复
+- 📊 **质量把关**: 自动生成质量报告，支持人工抽检验证
+- 🚫 **禁止绕过**: 不得以任何形式在CLI执行长任务
+
 #### 代码规范
 
 ##### Python代码风格
