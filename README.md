@@ -118,6 +118,18 @@ jupyter notebook
 - ✅ **可视化输出**: 直接查看生成结果和质量指标
 - ✅ **安全可重现**: 所有参数和配置都记录在notebook中
 
+> ⚠️ **重要安全声明：长任务由Owner运行**
+>
+> **禁止在命令行直接运行长耗时任务！**
+>
+> - ❌ 不要在CLI运行：`python tools/data_generator.py` 或其他批量生成脚本
+> - ❌ 不要在CLI运行：`make sprint-beta` 或任何 ≥10 条的生成任务
+> - ❌ 不要在CLI运行：训练、评审、批量评测等任务
+> - ✅ 只允许短校验：`make env-check && make sanity && make data-check` (≤1分钟)
+> - ✅ 长任务统一在 `notebooks/10_sprint_beta_microbatch.ipynb` 中执行
+> - ✅ 产物只提交 `artifacts_review/**` + 5条抽检样本，其他生成物不入库
+> - ✅ 所有长任务均在Jupyter Notebook中执行，享受中断恢复、安全重跑等特性
+
 ### Notebook使用指南
 
 #### 1. 环境检查 (`00_env_and_router_check.ipynb`)
