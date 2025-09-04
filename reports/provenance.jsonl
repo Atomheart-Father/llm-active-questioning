@@ -1,1 +1,0 @@
-{"timestamp": "2025-09-04T00:15:56.373611", "model_name": "Qwen/Qwen3-4B-Thinking-2507", "provider": "Qwen", "provider_type": "hf", "connectivity": true, "permissions": true, "probe_success": true, "has_think_tag": true, "has_control_symbols": true, "response_time": 0.0, "device_info": {"type": "cpu", "device_count": 1}, "error_message": null}

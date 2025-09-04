@@ -193,3 +193,7 @@ gemini_*.sqlite
 # Gemini cache
 gemini_*.sqlite
 
+
+# Generated artifacts
+reports/
+data/gen/
