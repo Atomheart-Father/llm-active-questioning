@@ -19,6 +19,137 @@ from dataclasses import dataclass
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# JSON Schema定义（强制JSON-only输出）
+ALC_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "turns": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "role": {"type": "string", "enum": ["user", "model_target", "assistant"]},
+                    "text": {"type": "string", "minLength": 1}
+                },
+                "required": ["role", "text"]
+            }
+        },
+        "labels": {
+            "type": "object",
+            "properties": {
+                "ask_required": {"type": "boolean"},
+                "ambiguity_types": {"type": "array", "items": {"type": "string"}},
+                "good_question_set": {"type": "array", "items": {"type": "string"}},
+                "minimal_clarifications": {"type": "integer", "enum": [1, 2]}
+            },
+            "required": ["ask_required", "ambiguity_types", "good_question_set", "minimal_clarifications"]
+        },
+        "reasoning": {
+            "type": "object",
+            "properties": {
+                "actions": {
+                    "type": "array",
+                    "items": {"type": "string"}
+                }
+            },
+            "required": ["actions"]
+        },
+        "source": {"type": "string"}
+    },
+    "required": ["turns", "labels", "reasoning", "source"]
+}
+
+AR_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "turns": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "role": {"type": "string", "enum": ["user", "model_target", "assistant"]},
+                    "text": {"type": "string", "minLength": 1}
+                },
+                "required": ["role", "text"]
+            }
+        },
+        "labels": {
+            "type": "object",
+            "properties": {
+                "ask_required": {"type": "boolean"},
+                "ambiguity_types": {"type": "array", "items": {"type": "string"}},
+                "good_question_set": {"type": "array", "items": {"type": "string"}},
+                "minimal_clarifications": {"type": "integer", "enum": [1, 2]},
+                "oracle_answer": {"type": "string"}
+            },
+            "required": ["ask_required", "ambiguity_types", "good_question_set", "minimal_clarifications", "oracle_answer"]
+        },
+        "reasoning": {
+            "type": "object",
+            "properties": {
+                "actions": {
+                    "type": "array",
+                    "items": {"type": "string"}
+                }
+            },
+            "required": ["actions"]
+        },
+        "source": {"type": "string"}
+    },
+    "required": ["turns", "labels", "reasoning", "source"]
+}
+
+RSD_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "turns": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "role": {"type": "string", "enum": ["user", "model_target", "assistant"]},
+                    "text": {"type": "string", "minLength": 1}
+                },
+                "required": ["role", "text"]
+            }
+        },
+        "labels": {
+            "type": "object",
+            "properties": {
+                "ask_required": {"type": "boolean"},
+                "ambiguity_types": {"type": "array", "items": {"type": "string"}},
+                "good_question_set": {"type": "array", "items": {"type": "string"}},
+                "minimal_clarifications": {"type": "integer", "enum": [1, 2]}
+            },
+            "required": ["ask_required", "ambiguity_types", "good_question_set", "minimal_clarifications"]
+        },
+        "reasoning": {
+            "type": "object",
+            "properties": {
+                "actions": {
+                    "type": "array",
+                    "items": {"type": "string"}
+                }
+            },
+            "required": ["actions"]
+        },
+        "source": {"type": "string"}
+    },
+    "required": ["turns", "labels", "reasoning", "source"]
+}
+
+# 输出长度配置（任务自适应 - 降低限制以减少MAX_TOKENS）
+OUTPUT_TOKEN_LIMITS = {
+    "ALC": int(os.getenv("ALC_MAX_OUTPUT_TOKENS", 512)),  # 从768降低到512
+    "AR": int(os.getenv("AR_MAX_OUTPUT_TOKENS", 1024)),   # 从1536降低到1024
+    "RSD": int(os.getenv("RSD_MAX_OUTPUT_TOKENS", 768))   # 从1024降低到768
+}
+
+AR_TOKEN_CAP = int(os.getenv("AR_MAX_OUTPUT_TOKENS_CAP", 3072))
+
 @dataclass
 class GenerationConfig:
     """生成配置"""
@@ -62,10 +193,10 @@ class GeminiClient:
         self.fallback_clients = fallback_clients or []
         self.failover_record = None
 
-    def generate(self, prompt: str, temperature: float = 0.7):
+    def generate(self, prompt: str, temperature: float = 0.7, task_type: str = "alc"):
         """生成内容 - 带Fail-Over的真实API调用"""
         # 首先尝试主API
-        result = self._call_gemini_api(prompt, temperature)
+        result = self._call_gemini_api(prompt, temperature, task_type)
         if result is not None:
             return result if not self.fallback_clients else (result, None)
 
@@ -94,8 +225,8 @@ class GeminiClient:
         logger.error("所有API调用都失败了")
         return None if not self.fallback_clients else (None, None)
 
-    def _call_gemini_api(self, prompt: str, temperature: float = 0.7) -> Optional[str]:
-        """调用Gemini API"""
+    def _call_gemini_api(self, prompt: str, temperature: float = 0.7, task_type: str = "alc") -> Optional[str]:
+        """调用Gemini API（支持JSON-only和输出长度控制）"""
         try:
             import requests
 
@@ -111,15 +242,67 @@ class GeminiClient:
 
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.api_key}"
 
+            # 获取任务特定的配置
+            max_tokens = OUTPUT_TOKEN_LIMITS.get(task_type.upper(), 1024)
+
+            # 构建payload
             payload = {
                 "contents": [{
                     "parts": [{"text": prompt}]
                 }],
                 "generationConfig": {
                     "temperature": temperature,
-                    "maxOutputTokens": 2048,
+                    "maxOutputTokens": max_tokens,
                 }
             }
+
+            # 暂时禁用JSON schema强制，先让基础功能工作
+            # TODO: 修复JSON schema支持后重新启用
+            if False and task_type.upper() in ["ALC", "AR", "RSD"]:
+                schema_map = {
+                    "ALC": ALC_SCHEMA,
+                    "AR": AR_SCHEMA,
+                    "RSD": RSD_SCHEMA
+                }
+                payload["generationConfig"].update({
+                    "responseMimeType": "application/json",
+                    "responseSchema": schema_map[task_type.upper()]
+                })
+
+                # 在prompt中添加严格的JSON-only约束
+                json_constraint = """
+=== CRITICAL JSON OUTPUT REQUIREMENTS ===
+
+You MUST output ONLY a valid JSON object. No explanations, no markdown, no code blocks.
+
+REQUIRED JSON STRUCTURE:
+{
+  "turns": [
+    {"role": "user", "text": "user message"},
+    {"role": "model_target", "text": "<ASK>question</ASK>"}
+  ],
+  "labels": {
+    "ask_required": true,
+    "ambiguity_types": ["type1", "type2"],
+    "good_question_set": ["question1", "question2"],
+    "minimal_clarifications": 1
+  },
+  "reasoning": {
+    "actions": ["AWARE_GAP", "ASK", "STOP_ASK", "FINALIZE"]
+  },
+  "source": "synthetic-gemini"
+}
+
+RULES:
+1. Output MUST be pure JSON - no ```json wrapper
+2. No polite phrases like "谢谢" or "please"
+3. model_target must contain exactly one <ASK> or <FINAL> tag
+4. Keep text concise but complete
+5. Include ALL required fields
+
+If you cannot generate valid JSON, return the simplest possible valid object.
+"""
+                payload["contents"][0]["parts"][0]["text"] = prompt + json_constraint
 
             headers = {"Content-Type": "application/json"}
 
@@ -127,6 +310,16 @@ class GeminiClient:
             response.raise_for_status()
 
             result = response.json()
+
+            # 检查是否触发MAX_TOKENS
+            if "candidates" in result and len(result["candidates"]) > 0:
+                candidate = result["candidates"][0]
+                if candidate.get("finishReason") == "MAX_TOKENS":
+                    logger.warning("触发MAX_TOKENS，尝试增加输出限制")  # 对于AR任务，尝试增加输出限制
+                    if task_type.upper() == "AR" and max_tokens < AR_TOKEN_CAP:
+                        new_max_tokens = min(int(max_tokens * 1.33), AR_TOKEN_CAP)
+                        logger.info(f"AR任务增加输出限制: {max_tokens} → {new_max_tokens}")
+                        return self._call_gemini_api(prompt, temperature, task_type)
 
             # 提取生成的文本
             if "candidates" in result and len(result["candidates"]) > 0:

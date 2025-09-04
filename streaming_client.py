@@ -23,12 +23,50 @@ class StreamingLLMClient:
 
     def __init__(self, api_key: str, base_url: str = "https://api.deepseek.com"):
         self.client = OpenAI(api_key=api_key, base_url=base_url)
-        self.connect_timeout = 10  # 连接超时10秒
-        self.read_timeout = 180    # 读取超时180秒（从120增加到180）
+        self.connect_timeout = int(os.getenv("CONNECT_TIMEOUT_S", 10))  # 连接超时10秒
+        self.read_timeout = int(os.getenv("READ_TIMEOUT_S", 240))       # 读取超时240秒（从180增加到240）
         self.write_timeout = 120   # 写入超时120秒
         self.total_timeout = 300   # 总超时5分钟
-        self.idle_timeout = 60     # 空闲超时60秒（从15增加到60）
-        self.max_retries = 3       # 最大重试次数
+        self.idle_timeout = int(os.getenv("IDLE_TIMEOUT_S", 90))        # 空闲超时90秒（从60增加到90）
+        self.max_retries = int(os.getenv("RETRY_MAX", 3))               # 最大重试次数
+        self.backoff_base = float(os.getenv("BACKOFF_BASE", 3.0))       # exp3指数退避
+        self.cb_open_seconds = int(os.getenv("CB_OPEN_SECONDS", 120))    # 熔断时长120秒
+        self.max_concurrency = int(os.getenv("MAX_CONCURRENCY", 4))      # 并发上限4
+
+        # 路由配置
+        self.routes = {
+            "ALC": ["gemini_flash", "gemini_flash_lite", "deepseek_chat"],
+            "AR":  ["gemini_pro", "deepseek_reasoner", "gemini_flash"],
+            "RSD": ["deepseek_reasoner"] + (["gemini_pro"] if os.getenv("ALLOW_RSD_FALLBACK") == "true" else [])
+        }
+
+        # 熔断器状态
+        self._circuit_breaker = {}  # provider -> {"fail": int, "open_until": 0}
+
+    def _sleep_with_jitter(self, attempt: int):
+        """带抖动的指数退避睡眠"""
+        import random
+        t = self.backoff_base ** attempt
+        time.sleep(t + random.uniform(0.05, 0.15))  # 50–150ms抖动
+
+    def _should_retry(self, status: int, exc: Exception) -> bool:
+        """判断是否应该重试"""
+        retriable = status in (429, 500, 502, 503, 504) or isinstance(exc, (TimeoutError, IOError))
+        return retriable
+
+    def _circuit_opened(self, provider: str) -> bool:
+        """检查熔断器是否开启"""
+        return self._circuit_breaker.get(provider, {}).get("open_until", 0) > time.time()
+
+    def _circuit_record(self, provider: str, ok: bool):
+        """记录熔断器状态"""
+        st = self._circuit_breaker.setdefault(provider, {"fail": 0, "open_until": 0})
+        if ok:
+            st["fail"] = 0
+        else:
+            st["fail"] += 1
+            if st["fail"] >= self.max_retries:
+                st["open_until"] = time.time() + self.cb_open_seconds
 
     def stream_chat(
         self,
@@ -168,27 +206,33 @@ class StreamingLLMClient:
         """
         failovers = failovers or []
 
-        # 针对AR/RSD启用DeepSeek→Gemini Fail-Over
-        if task_type in ["ar", "rsd"] and not failovers:
-            failovers = [{
-                "provider": "gemini",
-                "model": "gemini-2.5-pro",
-                "reason": "deepseek_timeout"
-            }]
+        # 使用任务类型特定的路由
+        task_routes = self.routes.get(task_type.upper(), [model])
 
         for attempt in range(self.max_retries):
-            try:
-                logger.info(f"尝试调用 {model} (第{attempt+1}次, 任务类型: {task_type})")
+            current_provider = model
 
-                result = self.stream_chat(model, messages, **kwargs)
+            # 检查熔断器
+            if self._circuit_opened(current_provider):
+                logger.warning(f"熔断器开启，跳过 {current_provider} (剩余{self.cb_open_seconds}s)")
+                attempt += 1
+                continue
+
+            try:
+                logger.info(f"尝试调用 {current_provider} (第{attempt+1}次, 任务类型: {task_type})")
+
+                result = self.stream_chat(current_provider, messages, **kwargs)
+
+                # 记录熔断器状态
+                self._circuit_record(current_provider, result["success"])
 
                 if result["success"]:
                     return result
 
                 # 记录Fail-Over
                 failover_info = {
-                    "from": model,
-                    "to": failovers[0]["provider"] if failovers else None,
+                    "from": current_provider,
+                    "to": task_routes[attempt + 1] if attempt + 1 < len(task_routes) else None,
                     "reason_code": result.get("error_type", "UNKNOWN"),
                     "ts": time.time(),
                     "attempt": attempt + 1,
@@ -197,21 +241,20 @@ class StreamingLLMClient:
 
                 logger.warning(f"调用失败，记录Fail-Over: {failover_info}")
 
-                # 如果有Fail-Over配置，继续尝试
-                if failovers and attempt < len(failovers):
-                    next_config = failovers[attempt]
-                    logger.info(f"尝试Fail-Over到: {next_config}")
-
-                    # 对于AR/RSD，实施DeepSeek→Gemini Fail-Over
-                    if task_type in ["ar", "rsd"] and next_config.get("provider") == "gemini":
-                        logger.info("实施AR/RSD DeepSeek→Gemini Fail-Over")
-                        # 这里会由调用方处理实际的Fail-Over逻辑
-
-                    time.sleep(2 ** attempt)  # 指数退避
+                # Fail-Over到下一个路由
+                if attempt + 1 < len(task_routes):
+                    next_provider = task_routes[attempt + 1]
+                    logger.info(f"尝试Fail-Over到: {next_provider}")
+                    model = next_provider  # 更新model为下一个provider
+                    self._sleep_with_jitter(attempt)  # exp3指数退避 + 抖动
+                else:
+                    logger.error(f"所有路由都已尝试失败")
+                    break
 
             except Exception as e:
                 logger.error(f"重试失败: {e}")
-                time.sleep(2 ** attempt)  # 指数退避
+                self._circuit_record(current_provider, False)
+                self._sleep_with_jitter(attempt)  # exp3指数退避 + 抖动
 
         return {
             "success": False,
