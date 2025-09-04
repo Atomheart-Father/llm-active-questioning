@@ -232,7 +232,8 @@ class ModelSanityProbe:
 
         if probe_success:
             print("✅ 推理探针测试通过")
-            print(".3f"        else:
+            print(f"响应时间: {response_time:.3f}秒")
+        else:
             print(f"❌ 推理探针测试失败: {probe_response}")
 
         return probe_success
@@ -299,7 +300,8 @@ class ModelSanityProbe:
         if self.result.response_time:
             report.append("## 性能信息")
             report.append("")
-            report.append(".3f"            report.append("")
+            report.append(f"响应时间: {self.result.response_time:.3f}秒")
+            report.append("")
 
         # 设备信息
         if self.result.device_info:
