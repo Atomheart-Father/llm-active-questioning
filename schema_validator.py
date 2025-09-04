@@ -150,6 +150,108 @@ class SchemaValidator:
 
         return len(errors) == 0, errors
 
+    def repair_or_raise(self, obj_text: str, schema: dict) -> dict:
+        """
+        解析并修复样本，支持最大JSON抽取和最小补全
+
+        Args:
+            obj_text: 原始响应文本
+            schema: JSON schema
+
+        Returns:
+            修复后的样本
+
+        Raises:
+            Exception: 如果无法修复
+        """
+        try:
+            # 首先尝试直接解析
+            return json.loads(obj_text)
+        except json.JSONDecodeError:
+            # 提取最大JSON对象
+            candidate = self.extract_largest_json(obj_text)
+            if candidate:
+                try:
+                    return json.loads(candidate)
+                except json.JSONDecodeError:
+                    pass
+
+            # 最小补全修复
+            fixed = self._minimal_repair_from_text(obj_text, schema)
+            if fixed:
+                return json.loads(fixed)
+
+            raise Exception(f"无法解析或修复JSON: {obj_text[:200]}...")
+
+    def _minimal_repair_from_text(self, text: str, schema: dict) -> Optional[str]:
+        """
+        从文本中进行最小补全修复
+
+        Args:
+            text: 原始文本
+            schema: JSON schema
+
+        Returns:
+            修复后的JSON字符串
+        """
+        try:
+            # 预处理文本
+            processed = self._preprocess_text(text)
+
+            # 尝试解析处理后的文本
+            try:
+                return json.loads(processed)
+            except json.JSONDecodeError:
+                pass
+
+            # 如果仍然失败，尝试提取并补全
+            candidate = self.extract_largest_json(processed)
+            if candidate:
+                try:
+                    parsed = json.loads(candidate)
+                    # 验证必需字段并补全
+                    return self._ensure_required_fields(parsed, schema)
+                except json.JSONDecodeError:
+                    pass
+
+            return None
+
+        except Exception as e:
+            logger.warning(f"最小补全修复失败: {e}")
+            return None
+
+    def _ensure_required_fields(self, obj: dict, schema: dict) -> str:
+        """
+        确保对象包含所有必需字段
+
+        Args:
+            obj: 解析后的对象
+            schema: JSON schema
+
+        Returns:
+            补全后的JSON字符串
+        """
+        required_fields = schema.get("required", [])
+
+        # 补全缺失的字段
+        for field in required_fields:
+            if field not in obj:
+                if field == "turns":
+                    obj[field] = [{"role": "user", "text": "用户查询"}]
+                elif field == "labels":
+                    obj[field] = {
+                        "ask_required": True,
+                        "ambiguity_types": [],
+                        "good_question_set": [],
+                        "minimal_clarifications": 1
+                    }
+                elif field == "reasoning":
+                    obj[field] = {"actions": ["AWARE_GAP", "ASK", "STOP_ASK", "FINALIZE"]}
+                elif field == "source":
+                    obj[field] = "synthetic-gemini"
+
+        return json.dumps(obj, ensure_ascii=False)
+
     def strip_politeness(self, text: str) -> str:
         """
         过滤文本中的礼貌语
