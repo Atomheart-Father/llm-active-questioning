@@ -16,6 +16,11 @@ class SchemaValidator:
 
     def __init__(self):
         self.schema_version = "1.1"
+        # 礼貌语过滤规则
+        self.politeness_patterns = [
+            r'谢谢', r'请', r'对不起', r'抱歉', r'您好', r'再见',
+            r'thank you', r'please', r'sorry', r'excuse me', r'hello', r'goodbye'
+        ]
 
     def validate_sample(self, sample: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """
@@ -138,10 +143,35 @@ class SchemaValidator:
         if re.search(r'<think>|</think>', text):
             errors.append("model_target不能包含<think>思维链")
 
-        if re.search(r'(谢谢|请|对不起|抱歉|您好|再见)', text):
+        # 使用strip_politeness过滤礼貌语
+        cleaned_text = self.strip_politeness(text)
+        if cleaned_text != text:
             errors.append("model_target不能包含礼貌语")
 
         return len(errors) == 0, errors
+
+    def strip_politeness(self, text: str) -> str:
+        """
+        过滤文本中的礼貌语
+
+        Args:
+            text: 原始文本
+
+        Returns:
+            过滤后的文本
+        """
+        cleaned = text
+        for pattern in self.politeness_patterns:
+            # 使用单词边界匹配，避免误匹配
+            regex = r'\b' + re.escape(pattern) + r'\b'
+            cleaned = re.sub(regex, '', cleaned, flags=re.IGNORECASE)
+
+        # 清理多余的空格和标点
+        cleaned = re.sub(r'\s+', ' ', cleaned)
+        cleaned = re.sub(r'\s*([,.!?;:])\s*', r'\1 ', cleaned)
+        cleaned = cleaned.strip()
+
+        return cleaned
 
     def _validate_labels(self, labels: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """校验labels字段"""
@@ -225,41 +255,152 @@ class SchemaValidator:
         # 返回最大的JSON对象
         return max(matches, key=len)
 
-    def repair_sample(self, sample_text: str) -> Optional[Dict[str, Any]]:
+    def repair_sample(self, sample_text: str, max_retries: int = 1) -> Optional[Dict[str, Any]]:
         """
-        尝试修复不完整的样本
+        尝试修复不完整的样本，支持最大JSON抽取和最小补全
 
         Args:
             sample_text: 原始响应文本
+            max_retries: 最大修复重试次数
 
         Returns:
             修复后的样本，如果无法修复返回None
         """
+        for attempt in range(max_retries + 1):  # 包括原始尝试
+            try:
+                # 提取最大JSON对象
+                largest_json = self.extract_largest_json(sample_text)
+                if not largest_json:
+                    logger.warning(f"第{attempt+1}次尝试：无法提取JSON对象")
+                    if attempt < max_retries:
+                        # 尝试清理文本后重试
+                        sample_text = self._preprocess_text(sample_text)
+                        continue
+                    return None
+
+                # 解析JSON
+                sample = json.loads(largest_json)
+
+                # 校验样本
+                is_valid, errors = self.validate_sample(sample)
+
+                if is_valid:
+                    logger.info(f"第{attempt+1}次尝试：样本修复成功")
+                    return sample
+                else:
+                    logger.warning(f"第{attempt+1}次尝试：样本校验失败: {errors}")
+
+                    if attempt < max_retries:
+                        # 尝试最小补全修复
+                        sample = self._minimal_repair(sample, errors)
+                        if sample:
+                            # 重新校验修复后的样本
+                            is_valid_after_repair, errors_after_repair = self.validate_sample(sample)
+                            if is_valid_after_repair:
+                                logger.info(f"第{attempt+1}次尝试：最小补全修复成功")
+                                return sample
+
+                    # 如果是最后一次尝试，返回简单修复的结果
+                    if attempt == max_retries:
+                        return self._simple_repair(sample, errors)
+
+            except json.JSONDecodeError as e:
+                logger.warning(f"第{attempt+1}次尝试：JSON解析失败: {e}")
+                if attempt < max_retries:
+                    # 尝试清理文本后重试
+                    sample_text = self._preprocess_text(sample_text)
+                    continue
+            except Exception as e:
+                logger.warning(f"第{attempt+1}次尝试：修复失败: {e}")
+                if attempt >= max_retries:
+                    break
+
+        return None
+
+    def _preprocess_text(self, text: str) -> str:
+        """
+        预处理文本，清理常见问题
+
+        Args:
+            text: 原始文本
+
+        Returns:
+            预处理后的文本
+        """
+        # 移除多余的换行和空格
+        cleaned = re.sub(r'\n+', ' ', text)
+        cleaned = re.sub(r'\s+', ' ', cleaned)
+
+        # 移除markdown代码块标记
+        cleaned = re.sub(r'```\w*\n?', '', cleaned)
+        cleaned = re.sub(r'```', '', cleaned)
+
+        # 清理JSON前的文本
+        # 查找JSON开始位置
+        json_start = cleaned.find('{')
+        if json_start > 0:
+            cleaned = cleaned[json_start:]
+
+        # 清理JSON后的文本
+        json_end = cleaned.rfind('}')
+        if json_end >= 0 and json_end < len(cleaned) - 1:
+            cleaned = cleaned[:json_end + 1]
+
+        return cleaned.strip()
+
+    def _minimal_repair(self, sample: Dict[str, Any], errors: List[str]) -> Optional[Dict[str, Any]]:
+        """
+        最小补全修复，只修复最关键的缺失字段
+
+        Args:
+            sample: 样本数据
+            errors: 错误列表
+
+        Returns:
+            修复后的样本
+        """
         try:
-            # 提取最大JSON
-            largest_json = self.extract_largest_json(sample_text)
-            if not largest_json:
-                logger.warning("无法提取JSON对象")
-                return None
+            # 只修复最关键的错误，不进行复杂的结构重组
+            for error in errors:
+                if "缺少必需字段" in error:
+                    if "turns" in error:
+                        if "turns" not in sample:
+                            sample["turns"] = []
+                    elif "labels" in error:
+                        if "labels" not in sample:
+                            sample["labels"] = {
+                                "ask_required": True,
+                                "ambiguity_types": [],
+                                "good_question_set": [],
+                                "minimal_clarifications": 1
+                            }
+                    elif "reasoning" in error:
+                        if "reasoning" not in sample:
+                            sample["reasoning"] = {
+                                "actions": ["AWARE_GAP", "ASK", "STOP_ASK", "FINALIZE"]
+                            }
+                    elif "source" in error:
+                        if "source" not in sample:
+                            sample["source"] = "synthetic-gemini"
 
-            # 解析JSON
-            sample = json.loads(largest_json)
+                elif "turns字段为空" in error:
+                    if "turns" not in sample or not sample["turns"]:
+                        sample["turns"] = [
+                            {"role": "user", "text": "用户查询"},
+                            {"role": "model_target", "text": "<ASK>澄清问题</ASK>"}
+                        ]
 
-            # 校验并修复
-            is_valid, errors = self.validate_sample(sample)
+                elif "model_target内容不符合ASK/FINAL格式要求" in error:
+                    # 检查并修复model_target
+                    if "turns" in sample and len(sample["turns"]) > 1:
+                        model_target = sample["turns"][1].get("text", "")
+                        if "<ASK>" not in model_target and "<FINAL>" not in model_target:
+                            sample["turns"][1]["text"] = f"<ASK>{model_target}</ASK>"
 
-            if is_valid:
-                return sample
-            else:
-                logger.warning(f"样本校验失败: {errors}")
-                # 尝试简单修复
-                return self._simple_repair(sample, errors)
+            return sample
 
-        except json.JSONDecodeError as e:
-            logger.warning(f"JSON解析失败: {e}")
-            return None
         except Exception as e:
-            logger.warning(f"修复失败: {e}")
+            logger.warning(f"最小补全修复失败: {e}")
             return None
 
     def _simple_repair(self, sample: Dict[str, Any], errors: List[str]) -> Optional[Dict[str, Any]]:

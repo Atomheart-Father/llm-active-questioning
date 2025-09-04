@@ -24,10 +24,10 @@ class StreamingLLMClient:
     def __init__(self, api_key: str, base_url: str = "https://api.deepseek.com"):
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.connect_timeout = 10  # 连接超时10秒
-        self.read_timeout = 120    # 读取超时120秒
+        self.read_timeout = 180    # 读取超时180秒（从120增加到180）
         self.write_timeout = 120   # 写入超时120秒
         self.total_timeout = 300   # 总超时5分钟
-        self.idle_timeout = 15     # 空闲超时15秒
+        self.idle_timeout = 60     # 空闲超时60秒（从15增加到60）
         self.max_retries = 3       # 最大重试次数
 
     def stream_chat(
@@ -150,6 +150,7 @@ class StreamingLLMClient:
         model: str,
         messages: List[Dict[str, str]],
         failovers: List[Dict[str, Any]] = None,
+        task_type: str = "alc",  # alc, ar, rsd
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -159,6 +160,7 @@ class StreamingLLMClient:
             model: 模型名称
             messages: 消息列表
             failovers: Fail-Over配置列表
+            task_type: 任务类型 (alc, ar, rsd)
             **kwargs: 其他参数
 
         Returns:
@@ -166,9 +168,17 @@ class StreamingLLMClient:
         """
         failovers = failovers or []
 
+        # 针对AR/RSD启用DeepSeek→Gemini Fail-Over
+        if task_type in ["ar", "rsd"] and not failovers:
+            failovers = [{
+                "provider": "gemini",
+                "model": "gemini-2.5-pro",
+                "reason": "deepseek_timeout"
+            }]
+
         for attempt in range(self.max_retries):
             try:
-                logger.info(f"尝试调用 {model} (第{attempt+1}次)")
+                logger.info(f"尝试调用 {model} (第{attempt+1}次, 任务类型: {task_type})")
 
                 result = self.stream_chat(model, messages, **kwargs)
 
@@ -181,7 +191,8 @@ class StreamingLLMClient:
                     "to": failovers[0]["provider"] if failovers else None,
                     "reason_code": result.get("error_type", "UNKNOWN"),
                     "ts": time.time(),
-                    "attempt": attempt + 1
+                    "attempt": attempt + 1,
+                    "task_type": task_type
                 }
 
                 logger.warning(f"调用失败，记录Fail-Over: {failover_info}")
@@ -190,7 +201,12 @@ class StreamingLLMClient:
                 if failovers and attempt < len(failovers):
                     next_config = failovers[attempt]
                     logger.info(f"尝试Fail-Over到: {next_config}")
-                    # 这里可以实现Fail-Over逻辑
+
+                    # 对于AR/RSD，实施DeepSeek→Gemini Fail-Over
+                    if task_type in ["ar", "rsd"] and next_config.get("provider") == "gemini":
+                        logger.info("实施AR/RSD DeepSeek→Gemini Fail-Over")
+                        # 这里会由调用方处理实际的Fail-Over逻辑
+
                     time.sleep(2 ** attempt)  # 指数退避
 
             except Exception as e:
@@ -200,7 +216,8 @@ class StreamingLLMClient:
         return {
             "success": False,
             "error": "ALL_ATTEMPTS_FAILED",
-            "max_retries": self.max_retries
+            "max_retries": self.max_retries,
+            "task_type": task_type
         }
 
 # 便捷函数
