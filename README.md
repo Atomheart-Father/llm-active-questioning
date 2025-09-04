@@ -100,6 +100,52 @@ python dataset_expansion.py
 python integrations/gemini/gemini_integration.py
 ```
 
+#### 5. 使用Notebook进行数据生成和分析 (推荐)
+```bash
+# 启动Jupyter Notebook
+jupyter notebook
+
+# 或使用VS Code打开notebook文件
+# 推荐按以下顺序运行：
+# 1. notebooks/00_env_and_router_check.ipynb - 环境和路由检查
+# 2. notebooks/10_sprint_beta_microbatch.ipynb - 生成微批数据
+# 3. notebooks/20_quality_reports_and_review.ipynb - 质量分析和报告
+```
+
+**Notebook优势：**
+- ✅ **可中断恢复**: 运行到一半可保存状态，下次继续
+- ✅ **逐步调试**: 每个cell独立运行，方便调试
+- ✅ **可视化输出**: 直接查看生成结果和质量指标
+- ✅ **安全可重现**: 所有参数和配置都记录在notebook中
+
+### Notebook使用指南
+
+#### 1. 环境检查 (`00_env_and_router_check.ipynb`)
+- **功能**: 加载环境变量，检查Provider可用性，验证路由配置
+- **输出**: `artifacts_review/00_env_probe.md` (安全，无敏感信息)
+- **运行时间**: < 30秒
+
+#### 2. 微批生成 (`10_sprint_beta_microbatch.ipynb`)
+- **功能**: 使用streaming client生成指定数量的样本，支持Fail-Over
+- **参数配置**:
+  ```python
+  DATA_DATE = "2025-09-04"
+  TARGET_ALC = 4    # ALC样本数量
+  TARGET_AR = 3     # AR样本数量
+  TARGET_RSD = 3    # RSD样本数量
+  ```
+- **输出**: `runs/<date>/<task>/partial.jsonl` → `data/gen/<date>/<task>/part-*.jsonl`
+- **特性**: 断点续跑、增量保存、自适应token限制
+
+#### 3. 质量分析 (`20_quality_reports_and_review.ipynb`)
+- **功能**: 分析生成数据质量，生成评审报告
+- **输入**: `data/gen/<date>/<task>/part-*.jsonl` 文件
+- **输出**: `artifacts_review/` 目录
+  - `generation_summary.md` - 生成统计
+  - `quality_review_report.md` - 详细质量指标
+  - `samples/` - 5个抽检样本文件
+- **指标计算**: Schema合规率、ASK触发率、控制符合规等
+
 ### 配置说明
 
 主要配置文件：`configs/default_config.yaml`

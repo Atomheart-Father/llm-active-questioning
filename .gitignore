@@ -194,6 +194,10 @@ gemini_*.sqlite
 gemini_*.sqlite
 
 
-# Generated artifacts
+# Generated artifacts (exclude from version control)
 reports/
 data/gen/
+runs/
+
+# Allow review artifacts to be committed
+!artifacts_review/**
