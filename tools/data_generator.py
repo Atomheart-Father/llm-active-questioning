@@ -268,8 +268,9 @@ class GeminiClient:
                 }
             }
 
-            # 添加JSON schema强制（针对ALC/AR/RSD）
-            if task_type.upper() in ["ALC", "AR", "RSD"]:
+            # 暂时禁用JSON schema强制，先让基础功能工作
+            # TODO: 修复JSON schema支持后重新启用
+            if False and task_type.upper() in ["ALC", "AR", "RSD"]:
                 schema_map = {
                     "ALC": ALC_SCHEMA,
                     "AR": AR_SCHEMA,
@@ -305,7 +306,7 @@ If unsure, return the smallest valid object that passes the schema.
             if "candidates" in result and len(result["candidates"]) > 0:
                 candidate = result["candidates"][0]
                 if candidate.get("finishReason") == "MAX_TOKENS":
-                    logger.warning("触发MAX_TOKENS，尝试增加输出限制"                    # 对于AR任务，尝试增加输出限制
+                    logger.warning("触发MAX_TOKENS，尝试增加输出限制")  # 对于AR任务，尝试增加输出限制
                     if task_type.upper() == "AR" and max_tokens < AR_TOKEN_CAP:
                         new_max_tokens = min(int(max_tokens * 1.33), AR_TOKEN_CAP)
                         logger.info(f"AR任务增加输出限制: {max_tokens} → {new_max_tokens}")
