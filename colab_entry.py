@@ -28,11 +28,14 @@ logger = logging.getLogger(__name__)
 # Import project modules
 try:
     from streaming_client import StreamingLLMClient as LLMClient
+    STREAMING_CLIENT_AVAILABLE = True
 except ImportError:
     print("⚠️ streaming_client not available (missing openai), using mock client")
+    STREAMING_CLIENT_AVAILABLE = False
     class LLMClient:
-        def __init__(self):
+        def __init__(self, api_key=None):
             self.client = None
+            self.api_key = api_key
 
         def stream_chat(self, provider, model, messages, max_tokens=1024, json_only=False):
             """Mock stream_chat method"""
@@ -109,10 +112,31 @@ SYSTEM_JSON_ONLY = (
 
 class DataGenerator:
     def __init__(self):
-        self.client = LLMClient()
+        # Initialize LLM client with API key (prefer GEMINI over DEEPSEEK)
+        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
+        if api_key:
+            self.client = LLMClient(api_key)
+            logger.info("LLM client initialized with API key")
+        else:
+            logger.warning("No API key found in environment variables (GEMINI_API_KEY or DEEPSEEK_API_KEY)")
+            # Create a mock client for testing
+            self.client = self._create_mock_client()
+
         self.validator = SchemaValidator()
         self.stats = {}
         logger.info("DataGenerator initialized")
+
+    def _create_mock_client(self):
+        """Create a mock client for testing when no API key is available"""
+        class MockLLMClient:
+            def __init__(self, api_key=None):
+                self.api_key = api_key
+
+            def stream_chat(self, provider, model, messages, max_tokens=1024, json_only=False):
+                """Mock stream_chat method that always fails gracefully"""
+                raise Exception("No API key available - please set DEEPSEEK_API_KEY or GEMINI_API_KEY")
+
+        return MockLLMClient()
 
     def has_polite_content(self, text: str) -> bool:
         """Check for polite phrases that should be avoided"""
