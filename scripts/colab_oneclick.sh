@@ -94,15 +94,34 @@ try:
         load_dotenv()
         print('✓ Loaded environment from .env file')
 except ImportError:
-    print('⚠️ python-dotenv not available, skipping .env loading')
+    print('⚠️ python-dotenv not available, falling back to manual .env loading')
     # Manual loading of .env if dotenv not available
     if os.path.exists('.env'):
-        with open('.env', 'r') as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith('#') and '=' in line:
-                    key, value = line.split('=', 1)
-                    os.environ[key.strip()] = value.strip().strip('"\''')
+        try:
+            with open('.env', 'r', encoding='utf-8') as f:
+                for line_num, line in enumerate(f, 1):
+                    line = line.strip()
+                    # Skip empty lines and comments
+                    if not line or line.startswith('#'):
+                        continue
+                    # Parse key=value pairs
+                    if '=' in line:
+                        try:
+                            key, value = line.split('=', 1)
+                            key = key.strip()
+                            value = value.strip().strip('"\''')  # Remove quotes
+                            if key:  # Ensure key is not empty
+                                os.environ[key] = value
+                                print(f'  Loaded env var: {key}')
+                        except ValueError as e:
+                            print(f'  Warning: Could not parse line {line_num} in .env: {line}')
+                    else:
+                        print(f'  Warning: Skipping invalid line {line_num} in .env: {line}')
+            print('✓ Manually loaded environment from .env file')
+        except Exception as e:
+            print(f'⚠️ Failed to load .env manually: {e}')
+    else:
+        print('  No .env file found')
 
 try:
     from streaming_client import LLMClient
