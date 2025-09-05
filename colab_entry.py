@@ -392,7 +392,7 @@ Date: {DATE}
 - CoT Leak: {metric['cot_leak']}/{metric['count']} ({metric['cot_leak']/metric['count']*100:.1f}% if metric['count'] > 0 else 'N/A')
 """
 
-        report_content += ".3f"".3f"".3f"f"""
+        report_content += f"""
 ## Diversity Metrics
 - ASK Distinct-2: {distinct2:.3f} (ALC only)
 
@@ -454,7 +454,7 @@ Timestamp: {datetime.now().isoformat()}
         for task, stats in self.stats.items():
             summary += f"- {task}: {stats['success']}/{stats['total']} ({stats['success']/stats['total']*100:.1f}% if stats['total'] > 0 else 'No samples')\n"
 
-        summary += ".1f"".1f"f"""
+        summary += f"""
 ## Files Generated
 - data/gen/{DATE}/<TASK>/part-001.jsonl (batch files)
 - runs/{DATE}/<TASK>/*.partial.jsonl (partial files)
