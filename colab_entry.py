@@ -400,7 +400,7 @@ Date: {DATE}
 """
 
         for task, stats in self.stats.items():
-            report_content += f"- {task}: {stats['success']}/{stats['total']} successful ({stats['success']/stats['total']*100:.1f}% if stats['total'] > 0 else 'No samples')\n"
+            report_content += f"- {task}: {stats['success']}/{stats['total']} successful ({(f\"{stats['success']/stats['total']*100:.1f}%\" if stats['total'] > 0 else 'No samples')})\n"
 
         report_file = art_dir / "quality_review_report.md"
         with open(report_file, 'w', encoding='utf-8') as f:
