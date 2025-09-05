@@ -34,6 +34,11 @@ except ImportError:
         def __init__(self):
             self.client = None
 
+        def stream_chat(self, provider, model, messages, max_tokens=1024, json_only=False):
+            """Mock stream_chat method"""
+            # Return a mock response that always fails to trigger proper error handling
+            raise Exception("Mock client: streaming_client not available")
+
 try:
     from schema_validator import SchemaValidator
     from schema_validator import minimal_completion, extract_largest_json
@@ -468,7 +473,11 @@ async def main():
     # Show final stats
     total_success = sum(stats['success'] for stats in generator.stats.values())
     total_total = sum(stats['total'] for stats in generator.stats.values())
-    logger.info(f"Final Stats: {total_success}/{total_total} successful ({total_success/total_total*100:.1f}%)")
+    if total_total > 0:
+        success_rate = total_success/total_total*100
+        logger.info(f"Final Stats: {total_success}/{total_total} successful ({success_rate:.1f}%)")
+    else:
+        logger.info(f"Final Stats: {total_success}/{total_total} successful (no samples generated)")
 
 
 if __name__ == "__main__":
