@@ -378,7 +378,7 @@ Date: {DATE}
 ## Overall Metrics
 - Schema OK Total: {total_ok}
 - Total Samples: {total_samples}
-- Success Rate: {total_ok/total_samples*100:.1f}% if total_samples > 0 else "No samples generated"
+- Success Rate: {(f"{total_ok/total_samples*100:.1f}%" if total_samples > 0 else "No samples generated")}
 
 ## Task Breakdown
 """
