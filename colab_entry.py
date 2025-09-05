@@ -378,7 +378,7 @@ Date: {DATE}
 ## Overall Metrics
 - Schema OK Total: {total_ok}
 - Total Samples: {total_samples}
-- Success Rate: {total_ok/total_samples*100:.1f}%
+- Success Rate: {total_ok/total_samples*100:.1f}% if total_samples > 0 else "No samples generated"
 
 ## Task Breakdown
 """
@@ -387,9 +387,9 @@ Date: {DATE}
             report_content += f"""
 ### {task}
 - Schema OK: {metric['schema_ok']}/{metric['count']}
-- ASK Rate: {metric['ask']}/{metric['count']} ({metric['ask']/metric['count']*100:.1f}%)""" + ("(ALC only)" if task == "ALC" else "")
+- ASK Rate: {metric['ask']}/{metric['count']} ({metric['ask']/metric['count']*100:.1f}% if metric['count'] > 0 else 'N/A')""" + ("(ALC only)" if task == "ALC" else "")
             report_content += f"""
-- CoT Leak: {metric['cot_leak']}/{metric['count']} ({metric['cot_leak']/metric['count']*100:.1f}%)
+- CoT Leak: {metric['cot_leak']}/{metric['count']} ({metric['cot_leak']/metric['count']*100:.1f}% if metric['count'] > 0 else 'N/A')
 """
 
         report_content += ".3f"".3f"".3f"f"""
@@ -400,7 +400,7 @@ Date: {DATE}
 """
 
         for task, stats in self.stats.items():
-            report_content += f"- {task}: {stats['success']}/{stats['total']} successful ({stats['success']/stats['total']*100:.1f}%)\n"
+            report_content += f"- {task}: {stats['success']}/{stats['total']} successful ({stats['success']/stats['total']*100:.1f}% if stats['total'] > 0 else 'No samples')\n"
 
         report_file = art_dir / "quality_review_report.md"
         with open(report_file, 'w', encoding='utf-8') as f:
@@ -452,7 +452,7 @@ Timestamp: {datetime.now().isoformat()}
         total_total = sum(stats['total'] for stats in self.stats.values())
 
         for task, stats in self.stats.items():
-            summary += f"- {task}: {stats['success']}/{stats['total']} ({stats['success']/stats['total']*100:.1f}%)\n"
+            summary += f"- {task}: {stats['success']}/{stats['total']} ({stats['success']/stats['total']*100:.1f}% if stats['total'] > 0 else 'No samples')\n"
 
         summary += ".1f"".1f"f"""
 ## Files Generated
@@ -461,7 +461,7 @@ Timestamp: {datetime.now().isoformat()}
 - artifacts_review/quality_review_report.md (quality metrics)
 - artifacts_review/samples/<TASK>_sample.json (review samples)
 
-Total Success Rate: {total_success/total_total*100:.1f}%
+Total Success Rate: {total_success/total_total*100:.1f}% if total_total > 0 else "No samples generated"
 """
 
         summary_file = art_dir / "generation_summary.md"
