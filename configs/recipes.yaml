@@ -1,0 +1,130 @@
+# Schema v1.2 Generation Recipes
+# Provider routing and quality thresholds for different generation modes
+
+# Global settings
+global:
+  max_concurrency: 4
+  connect_timeout_s: 10
+  read_timeout_s: 240
+  idle_timeout_s: 90
+  allow_rsd_fallback: true
+
+# Task-specific recipes
+recipes:
+  ALC:
+    # ATAC-ALC recipe
+    providers: ["gemini_flash", "gemini_flash_lite", "deepseek_chat"]
+    token_limits:
+      base: 768
+      max: 3072
+    quality_thresholds:
+      coverage_ask: 0.95      # Coverage@ASK ≥95%
+      branch_consistency: 0.90  # Branch-Consistency ≥90%
+      distinct_2: 0.85        # ASK句式多样性 ≥85%
+
+  AR:
+    # ToC-AR recipe
+    providers: ["gemini_pro", "deepseek_reasoner", "gemini_flash"]
+    token_limits:
+      base: 1536
+      max: 3072
+    quality_thresholds:
+      disambig_f1: 0.7        # Disambig-F1 ≥70%
+      evidence_coverage: 0.95  # 证据覆盖率 ≥95%
+      tree_depth_max: 2       # 澄清树最大深度
+      tree_branch_max: 3      # 澄清树最大分支数
+
+  RSD:
+    # RSD PreAct-lite recipe
+    providers: ["deepseek_reasoner", "gemini_pro"]
+    token_limits:
+      base: 1024
+      max: 3072
+    quality_thresholds:
+      action_prediction: 0.8   # 动作预测准确率
+      observation_structure: 0.9  # 观察结构完整性
+      reasoning_compactness: 0.7  # 推理紧凑性
+
+# Token budget allocation rules
+token_budget:
+  complexity_weights:
+    source:
+      hotpotqa: 1.2
+      asqa: 1.1
+      ambigqa: 1.0
+      gsm8k: 0.9
+      synthetic: 1.0
+    query_factors:
+      length_weight: 0.3
+      ambiguity_weight: 0.4
+      structural_weight: 0.3
+  allocation_rules:
+    priority_fields: ["FINAL", "clarify_tree", "ask_options"]
+    recovery_multiplier: 1.5
+    max_recovery: 3072
+
+# Quality metrics configuration
+metrics:
+  disambig_f1:
+    evidence_patterns:
+      - "hotpot:(d\\d+)#sent(\\d+)"
+      - "ambigqa:(.*?)#sent(\\d+)"
+      - "asqa:(.*?)#sent(\\d+)"
+    tree_weights:
+      depth_weight: 0.4
+      node_weight: 0.6
+
+  clarify_win_rate:
+    score_threshold: 0.6
+    margin_minimum: 0.1
+    pattern_analysis:
+      enabled: true
+      by_source: true
+      by_complexity: true
+
+  compactness_score:
+    connector_weights:
+      if: 0.8
+      then: 0.8
+      because: 0.9
+      therefore: 0.9
+      and: 0.6
+      or: 0.6
+      but: 0.7
+      compare: 0.8
+      contrast: 0.8
+    step_ideal_range: [2, 4]
+    max_steps: 5
+    ideal_connector_ratio: 0.4
+
+# Batch generation settings
+batch:
+  alc_targets: 4
+  ar_targets: 3
+  rsd_targets: 3
+  partial_save_interval: 1
+  max_retries_per_sample: 3
+  failover_timeout: 30
+
+# Output paths
+output:
+  data_dir: "data/gen"
+  runs_dir: "runs"
+  artifacts_dir: "artifacts_review"
+  provenance_file: "data/provenance.jsonl"
+
+# Logging and monitoring
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(levelname)s - %(message)s"
+  files:
+    train_log: "logs/train.log"
+    generation_log: "logs/generation.log"
+
+# Validation settings
+validation:
+  strict_mode: true
+  allow_partial: false
+  schema_version: "1.2"
+  cot_leakage_check: true
+  politeness_filter: true
