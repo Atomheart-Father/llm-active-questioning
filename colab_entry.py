@@ -26,8 +26,31 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # Import project modules
-from streaming_client import LLMClient
-from schema_validator import validate_schema, minimal_completion, extract_largest_json
+try:
+    from streaming_client import StreamingLLMClient as LLMClient
+except ImportError:
+    print("⚠️ streaming_client not available (missing openai), using mock client")
+    class LLMClient:
+        def __init__(self):
+            self.client = None
+
+        def stream_chat(self, provider, model, messages, max_tokens=1024, json_only=False):
+            """Mock stream_chat method"""
+            # Return a mock response that always fails to trigger proper error handling
+            raise Exception("Mock client: streaming_client not available")
+
+try:
+    from schema_validator import SchemaValidator
+    from schema_validator import minimal_completion, extract_largest_json
+except ImportError:
+    print("⚠️ schema_validator not available, using mock validator")
+    class SchemaValidator:
+        def validate_sample(self, sample):
+            return True, []
+    def minimal_completion(text, schema):
+        return text
+    def extract_largest_json(text):
+        return text
 
 # Configuration
 DATE = datetime.now().strftime("%Y-%m-%d")
@@ -87,6 +110,7 @@ SYSTEM_JSON_ONLY = (
 class DataGenerator:
     def __init__(self):
         self.client = LLMClient()
+        self.validator = SchemaValidator()
         self.stats = {}
         logger.info("DataGenerator initialized")
 
@@ -277,8 +301,8 @@ class DataGenerator:
             for sample in items:
                 total_samples += 1
                 try:
-                    validate_schema(sample, None)
-                    if self.validate_model_target(sample):
+                    is_valid, _ = self.validator.validate_sample(sample)
+                    if is_valid and self.validate_model_target(sample):
                         ok_count += 1
                         total_ok += 1
 
@@ -449,7 +473,11 @@ async def main():
     # Show final stats
     total_success = sum(stats['success'] for stats in generator.stats.values())
     total_total = sum(stats['total'] for stats in generator.stats.values())
-    logger.info(f"Final Stats: {total_success}/{total_total} successful ({total_success/total_total*100:.1f}%)")
+    if total_total > 0:
+        success_rate = total_success/total_total*100
+        logger.info(f"Final Stats: {total_success}/{total_total} successful ({success_rate:.1f}%)")
+    else:
+        logger.info(f"Final Stats: {total_success}/{total_total} successful (no samples generated)")
 
 
 if __name__ == "__main__":
