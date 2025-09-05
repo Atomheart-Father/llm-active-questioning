@@ -28,11 +28,14 @@ logger = logging.getLogger(__name__)
 # Import project modules
 try:
     from streaming_client import StreamingLLMClient as LLMClient
+    STREAMING_CLIENT_AVAILABLE = True
 except ImportError:
     print("⚠️ streaming_client not available (missing openai), using mock client")
+    STREAMING_CLIENT_AVAILABLE = False
     class LLMClient:
-        def __init__(self):
+        def __init__(self, api_key=None):
             self.client = None
+            self.api_key = api_key
 
         def stream_chat(self, provider, model, messages, max_tokens=1024, json_only=False):
             """Mock stream_chat method"""
@@ -109,10 +112,31 @@ SYSTEM_JSON_ONLY = (
 
 class DataGenerator:
     def __init__(self):
-        self.client = LLMClient()
+        # Initialize LLM client with API key (prefer GEMINI over DEEPSEEK)
+        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
+        if api_key:
+            self.client = LLMClient(api_key)
+            logger.info("LLM client initialized with API key")
+        else:
+            logger.warning("No API key found in environment variables (GEMINI_API_KEY or DEEPSEEK_API_KEY)")
+            # Create a mock client for testing
+            self.client = self._create_mock_client()
+
         self.validator = SchemaValidator()
         self.stats = {}
         logger.info("DataGenerator initialized")
+
+    def _create_mock_client(self):
+        """Create a mock client for testing when no API key is available"""
+        class MockLLMClient:
+            def __init__(self, api_key=None):
+                self.api_key = api_key
+
+            def stream_chat(self, provider, model, messages, max_tokens=1024, json_only=False):
+                """Mock stream_chat method that always fails gracefully"""
+                raise Exception("No API key available - please set DEEPSEEK_API_KEY or GEMINI_API_KEY")
+
+        return MockLLMClient()
 
     def has_polite_content(self, text: str) -> bool:
         """Check for polite phrases that should be avoided"""
@@ -354,7 +378,7 @@ Date: {DATE}
 ## Overall Metrics
 - Schema OK Total: {total_ok}
 - Total Samples: {total_samples}
-- Success Rate: {total_ok/total_samples*100:.1f}%
+- Success Rate: {(f"{total_ok/total_samples*100:.1f}%" if total_samples > 0 else "No samples generated")}
 
 ## Task Breakdown
 """
@@ -363,12 +387,12 @@ Date: {DATE}
             report_content += f"""
 ### {task}
 - Schema OK: {metric['schema_ok']}/{metric['count']}
-- ASK Rate: {metric['ask']}/{metric['count']} ({metric['ask']/metric['count']*100:.1f}%)""" + ("(ALC only)" if task == "ALC" else "")
+- ASK Rate: {metric['ask']}/{metric['count']} ({(f"{metric['ask']/metric['count']*100:.1f}%" if metric['count'] > 0 else 'N/A')})""" + ("(ALC only)" if task == "ALC" else "")
             report_content += f"""
-- CoT Leak: {metric['cot_leak']}/{metric['count']} ({metric['cot_leak']/metric['count']*100:.1f}%)
+- CoT Leak: {metric['cot_leak']}/{metric['count']} ({(f"{metric['cot_leak']/metric['count']*100:.1f}%" if metric['count'] > 0 else 'N/A')})
 """
 
-        report_content += ".3f"".3f"".3f"f"""
+        report_content += f"""
 ## Diversity Metrics
 - ASK Distinct-2: {distinct2:.3f} (ALC only)
 
@@ -376,7 +400,8 @@ Date: {DATE}
 """
 
         for task, stats in self.stats.items():
-            report_content += f"- {task}: {stats['success']}/{stats['total']} successful ({stats['success']/stats['total']*100:.1f}%)\n"
+            success_pct = f"{stats['success']/stats['total']*100:.1f}%" if stats['total'] > 0 else "No samples"
+            report_content += f"- {task}: {stats['success']}/{stats['total']} successful ({success_pct})\n"
 
         report_file = art_dir / "quality_review_report.md"
         with open(report_file, 'w', encoding='utf-8') as f:
@@ -428,16 +453,16 @@ Timestamp: {datetime.now().isoformat()}
         total_total = sum(stats['total'] for stats in self.stats.values())
 
         for task, stats in self.stats.items():
-            summary += f"- {task}: {stats['success']}/{stats['total']} ({stats['success']/stats['total']*100:.1f}%)\n"
+            summary += f"- {task}: {stats['success']}/{stats['total']} ({stats['success']/stats['total']*100:.1f}% if stats['total'] > 0 else 'No samples')\n"
 
-        summary += ".1f"".1f"f"""
+        summary += f"""
 ## Files Generated
 - data/gen/{DATE}/<TASK>/part-001.jsonl (batch files)
 - runs/{DATE}/<TASK>/*.partial.jsonl (partial files)
 - artifacts_review/quality_review_report.md (quality metrics)
 - artifacts_review/samples/<TASK>_sample.json (review samples)
 
-Total Success Rate: {total_success/total_total*100:.1f}%
+Total Success Rate: {total_success/total_total*100:.1f}% if total_total > 0 else "No samples generated"
 """
 
         summary_file = art_dir / "generation_summary.md"
