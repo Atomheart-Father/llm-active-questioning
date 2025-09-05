@@ -387,9 +387,9 @@ Date: {DATE}
             report_content += f"""
 ### {task}
 - Schema OK: {metric['schema_ok']}/{metric['count']}
-- ASK Rate: {metric['ask']}/{metric['count']} ({metric['ask']/metric['count']*100:.1f}% if metric['count'] > 0 else 'N/A')""" + ("(ALC only)" if task == "ALC" else "")
+- ASK Rate: {metric['ask']}/{metric['count']} ({(f"{metric['ask']/metric['count']*100:.1f}%" if metric['count'] > 0 else 'N/A')})""" + ("(ALC only)" if task == "ALC" else "")
             report_content += f"""
-- CoT Leak: {metric['cot_leak']}/{metric['count']} ({metric['cot_leak']/metric['count']*100:.1f}% if metric['count'] > 0 else 'N/A')
+- CoT Leak: {metric['cot_leak']}/{metric['count']} ({(f"{metric['cot_leak']/metric['count']*100:.1f}%" if metric['count'] > 0 else 'N/A')})
 """
 
         report_content += f"""
